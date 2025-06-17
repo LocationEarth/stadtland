@@ -17,7 +17,7 @@
         .game-info .host-name { font-size: 0.9em; color: #6c757d; }
         button { padding: 12px 20px; border: none; border-radius: 4px; color: #fff; cursor: pointer; transition: background-color 0.2s; font-size: 16px; margin-right: 10px; }
         button.primary { background-color: #007bff; }
-        button.secondary { background-color: #6c757d; }
+        button.secondary { background-color: #dc3545; }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-content { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 90%; max-width: 500px; }
@@ -60,19 +60,18 @@
         </div>
     </div>
 
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js"></script>
 
     <script>
+        // Fügen Sie hier Ihre Firebase-Konfiguration ein
         const firebaseConfig = {
-  apiKey: "AIzaSyAu0JTY2pLPIsfhmF92lyeXyzWvNIW0AqI",
-  authDomain: "stadtland-20411.firebaseapp.com",
-  projectId: "stadtland-20411",
-  storageBucket: "stadtland-20411.firebasestorage.app",
-  messagingSenderId: "545681689910",
-  appId: "1:545681689910:web:ecc5fe0efe0f0ca4523797",
-  measurementId: "G-MPCCFRTMYZ"
-};
+            apiKey: "...",
+            authDomain: "...",
+            projectId: "...",
+            // ... etc.
+        };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const gamesCollection = db.collection('open_games');
@@ -84,11 +83,11 @@
         const newGameForm = document.getElementById('new-game-form');
         const cancelBtn = document.getElementById('cancel-btn');
         
-        // Echtzeit-Listener
+        // Echtzeit-Listener für die Spiele-Lobby
         gamesCollection.orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             gameList.innerHTML = '';
             if (snapshot.empty) {
-                gameList.innerHTML = '<p class="no-games">Aktuell sind keine Spiele offen.</p>';
+                gameList.innerHTML = '<p class="no-games">Aktuell sind keine Spiele offen. Erstelle ein neues!</p>';
                 return;
             }
             snapshot.forEach(doc => {
@@ -101,13 +100,12 @@
                             hostId: game.hostId,
                             gameName: game.gameName,
                             playerName: playerName
-                            // Kategorien & Zeit werden vom Host beim Beitreten gelernt
                         });
                         window.location.href = `/index.html?${params.toString()}`;
                     }
                 });
                 
-                // KORREKTUR: Sicherer Umgang mit fehlenden Daten ("Datenmüll")
+                // KORREKTUR: Sicherer Umgang mit alten Daten, die keine Kategorien haben
                 const kategorienText = (game.kategorien && Array.isArray(game.kategorien)) 
                                        ? game.kategorien.join(', ') 
                                        : 'Standard';
@@ -123,10 +121,10 @@
             });
         }, error => {
             console.error("Fehler bei Echtzeit-Update:", error);
-            gameList.innerHTML = '<p class="no-games" style="color: red;">Verbindung zur Lobby fehlgeschlagen.</p>';
+            gameList.innerHTML = '<p class="no-games" style="color: red;">Verbindung zur Lobby fehlgeschlagen. Bitte Seite neu laden.</p>';
         });
 
-        // Event Listeners
+        // Event Listeners für Modal und Buttons
         newGameBtn.addEventListener('click', () => newGameModal.style.display = 'flex');
         cancelBtn.addEventListener('click', () => newGameModal.style.display = 'none');
         newGameModal.addEventListener('click', (e) => {
@@ -153,15 +151,20 @@
         });
 
         flushGamesBtn.addEventListener('click', async () => {
-            if (confirm("Bist du sicher, dass du ALLE offenen Spiele aus der Lobby löschen willst?")) {
+            if (confirm("Sicher? Dies löscht ALLE offenen Spiele aus der Lobby unwiderruflich.")) {
                 try {
+                    // Der Pfad muss korrekt sein, wie in vercel.json definiert.
                     const response = await fetch('/api/games/flush', { method: 'DELETE' });
-                    if (!response.ok) throw new Error('Server-Antwort war nicht ok.');
+                    if (!response.ok) {
+                         const err = await response.json();
+                         throw new Error(err.error || 'Server-Antwort war nicht ok.');
+                    }
                     const result = await response.json();
-                    alert(result.message || 'Aktion ausgeführt.');
+                    alert(result.message || 'Aktion erfolgreich ausgeführt.');
+                    // Die Lobby aktualisiert sich dank des Echtzeit-Listeners von selbst.
                 } catch (error) {
                     console.error('Fehler beim Aufräumen:', error);
-                    alert('Fehler beim Aufräumen der Lobby.');
+                    alert('Fehler beim Aufräumen der Lobby: ' + error.message);
                 }
             }
         });
