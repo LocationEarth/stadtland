@@ -18,9 +18,7 @@
         .game-info .host-name { font-size: 0.9em; color: #6c757d; }
         button { padding: 12px 20px; border: none; border-radius: 4px; color: #fff; cursor: pointer; transition: background-color 0.2s; font-size: 16px; margin-right: 10px; }
         button.primary { background-color: #007bff; }
-        button.primary:hover { background-color: #0056b3; }
         button.secondary { background-color: #6c757d; }
-        button.secondary:hover { background-color: #5a6268; }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-content { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 90%; max-width: 500px; }
@@ -43,27 +41,37 @@
         </ul>
     </div>
 
-    <!-- Das Modal bleibt identisch -->
-    <div id="new-game-modal" class="modal-overlay"> ... </div>
+    <div id="new-game-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Neues Spiel konfigurieren</h2>
+            <form id="new-game-form">
+                <label for="game-name-input">Spielname:</label>
+                <input type="text" id="game-name-input" value="Lustige Runde" required>
+                <label for="host-name-input">Dein Name (Host):</label>
+                <input type="text" id="host-name-input" value="Host" required>
+                <label for="kategorien-input">Kategorien (durch Komma getrennt):</label>
+                <input type="text" id="kategorien-input" value="Stadt,Land,Fluss,Beruf,Tier" required>
+                <label for="spielzeit-input">Spielzeit (in Sekunden):</label>
+                <input type="number" id="spielzeit-input" value="60" min="10" max="300" required>
+                <div style="margin-top: 20px;">
+                    <button type="submit" class="primary">Spiel erstellen & beitreten</button>
+                    <button type="button" id="cancel-btn" class="secondary">Abbrechen</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
-    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js"></script>
 
     <script>
-        // ========= FÜGEN SIE HIER IHRE FIREBASE-KONFIGURATION EIN =========
+        // Ihre Firebase-Konfiguration hier
         const firebaseConfig = {
-  apiKey: "AIzaSyAu0JTY2pLPIsfhmF92lyeXyzWvNIW0AqI",
-  authDomain: "stadtland-20411.firebaseapp.com",
-  projectId: "stadtland-20411",
-  storageBucket: "stadtland-20411.firebasestorage.app",
-  messagingSenderId: "545681689910",
-  appId: "1:545681689910:web:ecc5fe0efe0f0ca4523797",
-  measurementId: "G-MPCCFRTMYZ"
-};
-        // ===============================================================
-
-        // Firebase App initialisieren
+            apiKey: "...",
+            authDomain: "...",
+            projectId: "...",
+            // ... etc.
+        };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const gamesCollection = db.collection('open_games');
@@ -71,13 +79,15 @@
         const gameList = document.getElementById('game-list');
         const newGameBtn = document.getElementById('new-game-btn');
         const flushGamesBtn = document.getElementById('flush-games-btn');
-        // Modal-Logik bleibt gleich
+        const newGameModal = document.getElementById('new-game-modal');
+        const newGameForm = document.getElementById('new-game-form');
+        const cancelBtn = document.getElementById('cancel-btn');
         
-        // --- NEU: Echtzeit-Listener ---
+        // Echtzeit-Listener
         gamesCollection.orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-            gameList.innerHTML = ''; // Liste bei jeder Änderung neu aufbauen
+            gameList.innerHTML = '';
             if (snapshot.empty) {
-                gameList.innerHTML = '<p class="no-games">Aktuell sind keine Spiele offen. Erstelle ein neues!</p>';
+                gameList.innerHTML = '<p class="no-games">Aktuell sind keine Spiele offen.</p>';
                 return;
             }
             snapshot.forEach(doc => {
@@ -94,22 +104,79 @@
                         window.location.href = `/index.html?${params.toString()}`;
                     }
                 });
+                
+                // ========= KORREKTUR HIER: Sicherer Umgang mit fehlenden Daten =========
+                const kategorienText = (game.kategorien && Array.isArray(game.kategorien)) 
+                                       ? game.kategorien.join(', ') 
+                                       : 'Standard';
+                
                 li.innerHTML = `
                     <div class="game-info">
-                        <span class="game-name">${game.gameName}</span>
-                        <span class="host-name">Host: ${game.hostName} | Kategorien: ${game.kategorien.join(', ')}</span>
+                        <span class="game-name">${game.gameName || 'Unbenanntes Spiel'}</span>
+                        <span class="host-name">Host: ${game.hostName || '?'} | Kategorien: ${kategorienText}</span>
                     </div>
                     <span>Beitreten &rarr;</span>
                 `;
                 gameList.appendChild(li);
             });
         }, error => {
-            console.error("Fehler beim Abrufen der Echtzeit-Spiele:", error);
+            console.error("Fehler bei Echtzeit-Update:", error);
             gameList.innerHTML = '<p class="no-games" style="color: red;">Verbindung zur Lobby fehlgeschlagen.</p>';
         });
 
-        // Die Logik für die Modal-Buttons bleibt dieselbe
-        // ...
+        // Event Listeners für Modal und Buttons
+        newGameBtn.addEventListener('click', () => newGameModal.style.display = 'flex');
+        cancelBtn.addEventListener('click', () => newGameModal.style.display = 'none');
+        newGameModal.addEventListener('click', (e) => {
+            if (e.target === newGameModal) newGameModal.style.display = 'none';
+        });
+
+        newGameForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const gameName = document.getElementById('game-name-input').value;
+            const playerName = document.getElementById('host-name-input').value;
+            const kategorienString = document.getElementById('kategorien-input').value;
+            const spielzeit = document.getElementById('spielzeit-input').value;
+            
+            // WICHTIG: Erstellen des Spiels passiert jetzt im Backend, nicht im Frontend
+            try {
+                const response = await fetch('/api/games', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gameName,
+                        hostName: playerName,
+                        kategorien: kategorienString.split(',').map(k => k.trim()),
+                        spielzeit: parseInt(spielzeit, 10),
+                        // hostId wird vom Backend hinzugefügt, sobald der Host sich verbindet
+                    })
+                });
+                const createdGame = await response.json();
+                if (!response.ok) throw new Error(createdGame.error);
+
+                const params = new URLSearchParams({
+                    createGame: 'true',
+                    gameId: createdGame.id, // ID des Eintrags in der DB
+                    playerName: playerName,
+                });
+                window.location.href = `/index.html?${params.toString()}`;
+
+            } catch (error) {
+                alert('Fehler beim Erstellen des Spiels: ' + error.message);
+            }
+        });
+
+        flushGamesBtn.addEventListener('click', async () => {
+            if (confirm("Bist du sicher, dass du ALLE offenen Spiele aus der Lobby löschen willst?")) {
+                try {
+                    const response = await fetch('/api/games/flush', { method: 'DELETE' });
+                    const result = await response.json();
+                    alert(result.message || 'Aktion ausgeführt.');
+                } catch (error) {
+                    alert('Fehler beim Aufräumen der Lobby.');
+                }
+            }
+        });
     </script>
 </body>
 </html>
