@@ -9,9 +9,12 @@
         .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h1, h2 { color: #343a40; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
         #game-list { list-style-type: none; padding: 0; }
-        #game-list li { background-color: #e9ecef; margin-bottom: 10px; padding: 15px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        #game-list li { background-color: #e9ecef; margin-bottom: 10px; padding: 15px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background-color 0.2s; }
         #game-list li:hover { background-color: #dde2e6; }
-        #game-list a { text-decoration: none; color: #007bff; font-weight: bold; }
+        .game-info { flex-grow: 1; }
+        .game-info span { display: block; }
+        .game-info .game-name { font-weight: bold; color: #0056b3; }
+        .game-info .host-name { font-size: 0.9em; color: #6c757d; }
         button { padding: 12px 20px; border: none; border-radius: 4px; color: #fff; background-color: #28a745; cursor: pointer; transition: background-color 0.2s; font-size: 16px; }
         button:hover { background-color: #218838; }
         .header { display: flex; justify-content: space-between; align-items: center; }
@@ -33,15 +36,12 @@
 
     <script>
         const gameList = document.getElementById('game-list');
-        const loadingText = document.getElementById('loading-text');
         const newGameBtn = document.getElementById('new-game-btn');
 
         async function fetchGames() {
             try {
                 const response = await fetch('/api/games');
-                if (!response.ok) {
-                    throw new Error('Netzwerk-Antwort war nicht in Ordnung.');
-                }
+                if (!response.ok) throw new Error('Netzwerk-Antwort war nicht in Ordnung.');
                 const games = await response.json();
                 
                 gameList.innerHTML = ''; 
@@ -50,17 +50,22 @@
                 } else {
                     games.forEach(game => {
                         const li = document.createElement('li');
-                        const gameLink = document.createElement('a');
-                        // WICHTIGE ÄNDERUNG: Leitet zur Spielseite ohne Kategorien, da der Host die Kontrolle hat.
-                        // Clients nehmen an, was der Host vorgibt.
-                        gameLink.href = `/index.html?hostId=${game.hostId}&gameName=${encodeURIComponent(game.gameName)}`;
-                        gameLink.textContent = game.gameName;
-                        
-                        const hostInfo = document.createElement('span');
-                        hostInfo.textContent = `Host: ${game.hostName}`;
-
-                        li.appendChild(gameLink);
-                        li.appendChild(hostInfo);
+                        li.dataset.hostId = game.hostId; // Speichere hostId im Element
+                        li.dataset.gameName = game.gameName;
+                        li.innerHTML = `
+                            <div class="game-info">
+                                <span class="game-name">${game.gameName}</span>
+                                <span class="host-name">Host: ${game.hostName}</span>
+                            </div>
+                            <span>Beitreten &rarr;</span>
+                        `;
+                        // Klick-Event für die ganze Zeile
+                        li.addEventListener('click', () => {
+                            const playerName = prompt("Wie lautet dein Name?", "Spieler");
+                            if (playerName) {
+                                window.location.href = `/index.html?hostId=${game.hostId}&gameName=${encodeURIComponent(game.gameName)}&playerName=${encodeURIComponent(playerName)}`;
+                            }
+                        });
                         gameList.appendChild(li);
                     });
                 }
@@ -74,20 +79,16 @@
             const gameName = prompt("Wie soll dein Spiel heißen?", "Lustige Runde");
             if (!gameName) return;
 
-            const playerName = prompt("Wie lautet dein Name?", "Host");
+            const playerName = prompt("Wie lautet dein Name als Host?", "Host");
             if (!playerName) return;
 
-            // ===== NEUER TEIL: KATEGORIEN ABFRAGEN =====
             const defaultKategorien = "Stadt,Land,Fluss,Beruf,Tier";
             const kategorienString = prompt("Welche Kategorien? (durch Komma getrennt)", defaultKategorien);
             if (!kategorienString) return;
-            // ===========================================
 
-            // Leitet zur Spielseite weiter und übergibt ALLE Infos für die Erstellung
             window.location.href = `/index.html?createGame=true&gameName=${encodeURIComponent(gameName)}&playerName=${encodeURIComponent(playerName)}&kategorien=${encodeURIComponent(kategorienString)}`;
         });
 
-        // Lade Spiele beim Start und dann alle 15 Sekunden
         fetchGames();
         setInterval(fetchGames, 15000);
     </script>
