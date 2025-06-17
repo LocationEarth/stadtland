@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stadt-Land-Fluss - Lobby</title>
     <style>
-        /* CSS bleibt identisch */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f8f9fa; color: #212529; }
         .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h1, h2 { color: #343a40; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
@@ -65,9 +64,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js"></script>
 
     <script>
-        // Ihre Firebase-Konfiguration hier
         const firebaseConfig = {
-            apiKey: "...",
+            // FÜGEN SIE HIER IHRE FIREBASE-KONFIGURATION EIN
+            apiKey: "AIza...",
             authDomain: "...",
             projectId: "...",
             // ... etc.
@@ -100,12 +99,13 @@
                             hostId: game.hostId,
                             gameName: game.gameName,
                             playerName: playerName
+                            // Kategorien & Zeit werden vom Host beim Beitreten gelernt
                         });
                         window.location.href = `/index.html?${params.toString()}`;
                     }
                 });
                 
-                // ========= KORREKTUR HIER: Sicherer Umgang mit fehlenden Daten =========
+                // KORREKTUR: Sicherer Umgang mit fehlenden Daten ("Datenmüll")
                 const kategorienText = (game.kategorien && Array.isArray(game.kategorien)) 
                                        ? game.kategorien.join(', ') 
                                        : 'Standard';
@@ -124,7 +124,7 @@
             gameList.innerHTML = '<p class="no-games" style="color: red;">Verbindung zur Lobby fehlgeschlagen.</p>';
         });
 
-        // Event Listeners für Modal und Buttons
+        // Event Listeners
         newGameBtn.addEventListener('click', () => newGameModal.style.display = 'flex');
         cancelBtn.addEventListener('click', () => newGameModal.style.display = 'none');
         newGameModal.addEventListener('click', (e) => {
@@ -154,9 +154,11 @@
             if (confirm("Bist du sicher, dass du ALLE offenen Spiele aus der Lobby löschen willst?")) {
                 try {
                     const response = await fetch('/api/games/flush', { method: 'DELETE' });
+                    if (!response.ok) throw new Error('Server-Antwort war nicht ok.');
                     const result = await response.json();
                     alert(result.message || 'Aktion ausgeführt.');
                 } catch (error) {
+                    console.error('Fehler beim Aufräumen:', error);
                     alert('Fehler beim Aufräumen der Lobby.');
                 }
             }
