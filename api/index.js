@@ -1,6 +1,8 @@
 /**
  * api/index.js
- * Finale Version mit korrigierter Routen-Reihenfolge, um den "flush"-Fehler zu beheben.
+ * Dies ist die vollständige und korrekte Version des einheitlichen Backends.
+ * Es enthält alle Funktionen und den vollständigen Prompt.
+ * Es fügt einen Debug-Log hinzu, um die rohe Antwort der KI zu sehen.
  */
 
 const express = require('express');
@@ -22,7 +24,7 @@ try {
         });
     }
 } catch (e) {
-    console.error('Firebase Service Account Initialisierung fehlgeschlagen.', e);
+    console.error('Firebase Service Account Initialisierung fehlgeschlagen. Überprüfen Sie die Umgebungsvariable in Vercel.', e);
 }
 const db = admin.firestore();
 const gamesCollection = db.collection('open_games');
@@ -62,8 +64,6 @@ app.post('/api/games', async (req, res) => {
     }
 });
 
-// ========= KORREKTE REIHENFOLGE HIER =========
-// Die spezifische Route /flush kommt ZUERST.
 app.delete('/api/games/flush', async (req, res) => {
     try {
         const snapshot = await gamesCollection.get();
@@ -71,18 +71,14 @@ app.delete('/api/games/flush', async (req, res) => {
             return res.status(200).json({ message: 'Keine alten Spiele zum Löschen gefunden.' });
         }
         const batch = db.batch();
-        snapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
+        snapshot.docs.forEach(doc => { batch.delete(doc.ref); });
         await batch.commit();
         res.status(200).json({ message: `${snapshot.size} alte Spiele wurden erfolgreich gelöscht.` });
     } catch (error) {
-        console.error('Fehler beim Aufräumen der Spiele:', error);
         res.status(500).json({ error: 'Spiele konnten nicht aufgeräumt werden.' });
     }
 });
 
-// Die allgemeine Route /:id kommt DANACH.
 app.delete('/api/games/:id', async (req, res) => {
     try {
         await gamesCollection.doc(req.params.id).delete();
@@ -115,11 +111,42 @@ app.post('/api/evaluate', async (req, res) => {
     if (!buchstabe || !kategorien || !spieler_antworten || !API_KEY) {
         return res.status(400).json({ error: 'Fehlende Daten oder Server-Konfiguration.' });
     }
-    const prompt = `Du bist ein fairer, konsistenter und strenger "Stadt, Land, Fluss"-Schiedsrichter... (Prompt bleibt unverändert)`;
+
+    const prompt = `
+      Du bist ein fairer, konsistenter und strenger "Stadt, Land, Fluss"-Schiedsrichter. Deine Hauptaufgabe ist es, die Regeln genau anzuwenden und Schummeln zu verhindern, aber gleichzeitig gebräuchliches Allgemeinwissen zu akzeptieren.
+      Bewerte die folgenden Antworten für den Buchstaben "${buchstabe}".
+
+      Regeln für die Bewertung:
+      1.  Korrekte Schreibweise: Die Antwort muss ein korrekt geschriebenes, real existierendes Wort sein. Es gibt keine Toleranz für Tippfehler. "Berliin" ist ungültig.
+      2.  Exakter Anfangsbuchstabe: Die Antwort muss exakt mit dem Buchstaben "${buchstabe}" beginnen. Das Verändern des Anfangsbuchstabens (z.B. "Cänguruh" für "C") ist verboten.
+      3.  Gültigkeit der Kategorie: Die Antwort muss eindeutig in die jeweilige Kategorie passen.
+      4.  Singular und Plural: Korrekt gebildete Singular- und Pluralformen sind beide gültig (z.B. "Lachs" und "Lachse").
+      5.  Allgemeinwissen & Gebräuchliche Namen: Allgemein gebräuchliche Bezeichnungen sind gültig, auch wenn sie nicht der offizielle, vollständige Name sind (z.B. "Irland" ist gültig). Sei hier nicht pedantisch.
+      6.  Leere Antworten: Eine leere Antwort ist immer ungültig.
+
+      Die Kategorien sind: ${kategorien.join(', ')}.
+      Die Antworten der Spieler sind: ${JSON.stringify(spieler_antworten)}
+
+      Gib deine Antwort AUSSCHLIESSLICH im folgenden JSON-Format zurück, ohne weiteren Text:
+      {
+        "Spieler 1": { "Stadt": true, "Land": false },
+        "Spieler 2": { "Stadt": true, "Land": true }
+      }
+    `;
+
     const requestBody = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } };
+    
+    let rawResponseText = "No response from AI";
     try {
         const geminiResponse = await retry(async () => axios.post(API_URL, requestBody, { timeout: 20000 }), { retries: 1 });
-        const validationData = JSON.parse(geminiResponse.data.candidates[0].content.parts[0].text);
+        rawResponseText = geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!rawResponseText) {
+            throw new Error('Kein Text in der Antwort der Gemini API gefunden.');
+        }
+        console.log("DEBUG: Rohe Validierungsdaten von Gemini:", rawResponseText);
+        
+        const validationData = JSON.parse(rawResponseText);
         
         const punkteTabelle = {};
         const spielerNamen = Object.keys(spieler_antworten);
@@ -131,34 +158,44 @@ app.post('/api/evaluate', async (req, res) => {
                 const istGueltig = getValidationResult(validationData, spieler, kategorie);
                 if (antwort && istGueltig) {
                     const normalisierteAntwort = antwort.trim().toLowerCase();
-                    if (!gueltigeAntwortenDieserRunde[normalisierteAntwort]) gueltigeAntwortenDieserRunde[normalisierteAntwort] = [];
+                    if (!gueltigeAntwortenDieserRunde[normalisierteAntwort]) {
+                        gueltigeAntwortenDieserRunde[normalisierteAntwort] = [];
+                    }
                     gueltigeAntwortenDieserRunde[normalisierteAntwort].push(spieler);
                 }
             });
 
             spielerNamen.forEach(spieler => {
-                if (!punkteTabelle[spieler]) punkteTabelle[spieler] = Array(kategorien.length).fill(0);
+                if (!punkteTabelle[spieler]) {
+                    punkteTabelle[spieler] = Array(kategorien.length).fill(0);
+                }
                 const antwort = spieler_antworten[spieler][katIndex];
                 const normalisierteAntwort = antwort.trim().toLowerCase();
                 const spielerMitDieserAntwort = gueltigeAntwortenDieserRunde[normalisierteAntwort];
                 if (spielerMitDieserAntwort) {
-                    if (spielerMitDieserAntwort.length === 1) punkteTabelle[spieler][katIndex] = 20;
-                    else if (spielerMitDieserAntwort.length === spielerNamen.length && spielerNamen.length > 1) punkteTabelle[spieler][katIndex] = 5;
-                    else punkteTabelle[spieler][katIndex] = 10;
+                    if (spielerMitDieserAntwort.length === 1) {
+                        punkteTabelle[spieler][katIndex] = 20;
+                    } else if (spielerMitDieserAntwort.length === spielerNamen.length && spielerNamen.length > 1) {
+                        punkteTabelle[spieler][katIndex] = 5;
+                    } else {
+                        punkteTabelle[spieler][katIndex] = 10;
+                    }
                 }
             });
         });
+
         const finaleTabelle = spielerNamen.map(spieler => ({
             spieler: spieler,
             antworten: spieler_antworten[spieler],
             punkte: punkteTabelle[spieler]
         }));
+        
         res.json({ tabelle: finaleTabelle });
+
     } catch (error) {
-        console.error(`Fehler bei der Verarbeitung von /api/evaluate: ${error.message}`);
+        console.error(`Fehler bei der Verarbeitung von /api/evaluate: ${error.message}. Roh-Antwort war: "${rawResponseText}"`);
         res.status(502).json({ error: 'Fehler bei der Auswertung. Möglicherweise eine ungültige API-Antwort.' });
     }
 });
-
 
 module.exports = app;
