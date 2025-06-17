@@ -131,38 +131,22 @@
             if (e.target === newGameModal) newGameModal.style.display = 'none';
         });
 
-        newGameForm.addEventListener('submit', async (e) => {
+        newGameForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const gameName = document.getElementById('game-name-input').value;
             const playerName = document.getElementById('host-name-input').value;
             const kategorienString = document.getElementById('kategorien-input').value;
             const spielzeit = document.getElementById('spielzeit-input').value;
             
-            // WICHTIG: Erstellen des Spiels passiert jetzt im Backend, nicht im Frontend
-            try {
-                const response = await fetch('/api/games', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        gameName,
-                        hostName: playerName,
-                        kategorien: kategorienString.split(',').map(k => k.trim()),
-                        spielzeit: parseInt(spielzeit, 10),
-                        // hostId wird vom Backend hinzugefügt, sobald der Host sich verbindet
-                    })
-                });
-                const createdGame = await response.json();
-                if (!response.ok) throw new Error(createdGame.error);
-
+            if (gameName && playerName && kategorienString && spielzeit) {
                 const params = new URLSearchParams({
                     createGame: 'true',
-                    gameId: createdGame.id, // ID des Eintrags in der DB
+                    gameName: gameName,
                     playerName: playerName,
+                    kategorien: kategorienString,
+                    spielzeit: spielzeit
                 });
                 window.location.href = `/index.html?${params.toString()}`;
-
-            } catch (error) {
-                alert('Fehler beim Erstellen des Spiels: ' + error.message);
             }
         });
 
