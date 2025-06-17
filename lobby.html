@@ -65,12 +65,14 @@
 
     <script>
         const firebaseConfig = {
-            // FÜGEN SIE HIER IHRE FIREBASE-KONFIGURATION EIN
-            apiKey: "AIza...",
-            authDomain: "...",
-            projectId: "...",
-            // ... etc.
-        };
+  apiKey: "AIzaSyAu0JTY2pLPIsfhmF92lyeXyzWvNIW0AqI",
+  authDomain: "stadtland-20411.firebaseapp.com",
+  projectId: "stadtland-20411",
+  storageBucket: "stadtland-20411.firebasestorage.app",
+  messagingSenderId: "545681689910",
+  appId: "1:545681689910:web:ecc5fe0efe0f0ca4523797",
+  measurementId: "G-MPCCFRTMYZ"
+};
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const gamesCollection = db.collection('open_games');
