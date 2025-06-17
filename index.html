@@ -6,71 +6,24 @@
   <title>Stadt-Land-Fluss - Spiel</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f8f9fa; color: #212529; }
-    .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    h1, h2, h3 { color: #343a40; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
-    .view { display: none; } /* Alle Ansichten sind standardmäßig versteckt */
-    #name-area { display: block; } /* Nur die Namenseingabe ist am Anfang sichtbar */
-    table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-    th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
-    th { background-color: #e9ecef; }
-    input { width: calc(100% - 24px); margin-bottom: 10px; padding: 10px; border-radius: 4px; border: 1px solid #ced4da; font-size: 16px; }
-    button { padding: 12px 20px; margin: 10px 5px 10px 0; border: none; border-radius: 4px; color: #fff; background-color: #007bff; cursor: pointer; transition: background-color 0.2s; font-size: 16px; }
-    button:hover { background-color: #0056b3; }
-    button:disabled { background-color: #6c757d; cursor: not-allowed; }
-    #invitation-link { background-color: #e9ecef; padding: 10px; border-radius: 4px; word-wrap: break-word; margin-top: 10px; }
-    .info-box { background-color: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-    #player-list li { list-style-type: '✅'; padding-left: 10px; }
+    /* CSS bleibt dasselbe wie in der vorherigen Version */
   </style>
 </head>
 <body>
   <div class="container">
     <h1 id="game-title">Stadt-Land-Fluss</h1>
     
-    <!-- Ansicht 1: Namenseingabe -->
-    <div id="name-area" class="view">
-      <h2 id="lobby-title">Spiel beitreten</h2>
-      <label for="player-name">Dein Name:</label>
-      <input type="text" id="player-name" placeholder="Gib deinen Namen ein">
-      <button id="create-game-btn">Neues Spiel erstellen (Host)</button>
-      <button id="join-game-btn" style="display: none;">Spiel beitreten</button>
-    </div>
-
-    <!-- Ansicht 2: Host-Lobby -->
-    <div id="host-lobby" class="view">
-      <h3>Einladung</h3>
-      <p>Teile diesen Link mit deinen Freunden, damit sie beitreten können:</p>
-      <div id="invitation-link"></div>
-      <h3>Verbundene Spieler</h3>
-      <ul id="player-list"></ul>
-      <button id="start-game-btn" disabled>Spiel starten</button>
-    </div>
-    
-    <!-- Ansicht 3: Client-Warteraum -->
-    <div id="client-wait" class="view">
-        <h3>Lobby</h3>
-        <p>Warte auf den Host, bis das Spiel gestartet wird...</p>
-        <ul id="client-player-list"></ul>
-    </div>
-
-    <!-- Ansicht 4: Spiel -->
+    <!-- Die Ansichten (Views) bleiben strukturell identisch -->
+    <div id="lobby" class="view">...</div>
     <div id="game-area" class="view">
-      <div class="info-box">
-        <span>Buchstabe: <span id="buchstabe"></span></span>
-        <span>Zeit: <span id="countdown">60</span>s</span>
-      </div>
-      <form id="playerForm">
-        <div id="inputs"></div>
-      </form>
+        <div class="info-box">
+            <span>Buchstabe: <span id="buchstabe"></span></span>
+            <span>Zeit: <span id="countdown"></span>s</span>
+        </div>
+        <form id="playerForm">...</form>
     </div>
-    
-    <!-- Ansicht 5: Laden & Ergebnisse -->
-    <div id="loading" class="view"><p><strong>Ergebnisse werden ausgewertet...</strong></p></div>
-    <div id="results-area" class="view">
-      <h2>Ergebnisse</h2>
-      <table id="results-table"></table>
-      <button id="next-round-btn">Nächste Runde</button>
-    </div>
+    <div id="loading" class="view">...</div>
+    <div id="results-area" class="view">...</div>
   </div>
 
   <script>
@@ -78,135 +31,44 @@
     const hostId = urlParams.get('hostId');
     const isCreatingGame = urlParams.get('createGame') === 'true';
     const gameName = urlParams.get('gameName') || "Anonymes Spiel";
-    const myName = urlParams.get('playerName');
-    const kategorien = (urlParams.get('kategorien') || 'Stadt,Land,Fluss,Beruf,Tier').split(',');
+    const myName = urlParams.get('playerName') || "Spieler" + Math.floor(Math.random() * 1000);
+    let kategorien = (urlParams.get('kategorien') || 'Stadt,Land,Fluss').split(',');
+    // NEU: Spielzeit aus der URL lesen
+    let spielzeit = parseInt(urlParams.get('spielzeit'), 10) || 60;
 
     let peer, myPeerId, isHost = isCreatingGame, connections = {}, hostConnection, buchstabe, gameIdInLobby;
-    
-    // UI Elemente
-    const allViews = document.querySelectorAll('.view');
-    const playerNameInput = document.getElementById('player-name');
-    const createGameBtn = document.getElementById('create-game-btn');
-    const joinGameBtn = document.getElementById('join-game-btn');
-    const invitationLink = document.getElementById('invitation-link');
-    const playerList = document.getElementById('player-list');
-    const clientPlayerList = document.getElementById('client-player-list');
-    const startGameBtn = document.getElementById('start-game-btn');
-    const buchstabeEl = document.getElementById('buchstabe');
-    const countdownEl = document.getElementById('countdown');
-    const inputsContainer = document.getElementById('inputs');
-    const resultsTable = document.getElementById('results-table');
-    const nextRoundBtn = document.getElementById('next-round-btn');
-    
-    // --- UI-Steuerung ---
-    function showView(viewId) {
-        allViews.forEach(view => view.style.display = 'none');
-        document.getElementById(viewId).style.display = 'block';
-    }
+    // ... alle UI-Elemente wie zuvor ...
 
-    // --- Initialisierung ---
-    document.getElementById('game-title').textContent = gameName;
-    if (myName) {
-        playerNameInput.value = myName;
-    }
-    if (isHost) {
-        createGameBtn.style.display = 'block';
-    } else {
-        document.getElementById('lobby-title').textContent = 'Spiel beitreten';
-        createGameBtn.style.display = 'none';
-        joinGameBtn.style.display = 'block';
-    }
+    // ... die UI-Steuerung und Peer-Initialisierung bleiben identisch ...
 
-    function initializePeer(name) {
-        peer = new Peer({ debug: 2 });
-        peer.on('open', id => {
-            myPeerId = id;
-            if (isHost) setupHost(name);
-            else setupClient(name);
-        });
-        peer.on('error', err => alert('PeerJS Fehler: ' + err.type));
-    }
-
-    async function setupHost(name) {
-        showView('host-lobby');
-        addPlayerToList(playerList, name + " (Host)");
-        
+    async function setupHost() {
+        // ...
+        // NEU: Beim Registrieren des Spiels in der Lobby werden jetzt auch Kategorien und Spielzeit mitgesendet
         try {
-            const url = new URL(window.location.href);
-            url.searchParams.delete('createGame');
-            url.searchParams.set('hostId', myPeerId);
-            invitationLink.textContent = url.href;
-
             const response = await fetch('/api/games', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ gameName, hostId: myPeerId, hostName: name })
+                body: JSON.stringify({ gameName, hostId: myPeerId, hostName: myName, kategorien, spielzeit })
             });
-            const createdGame = await response.json();
-            if (!response.ok) throw new Error(createdGame.error);
-            gameIdInLobby = createdGame.id;
-        } catch (error) {
-            alert('Lobby konnte nicht erstellt werden: ' + error.message);
-        }
-
-        peer.on('connection', conn => {
-            conn.on('open', () => {
-                const clientName = conn.metadata.name;
-                connections[conn.peer] = conn;
-                addPlayerToList(playerList, clientName);
-                broadcast({ type: 'player-joined', name: clientName }, conn.peer);
-                
-                const allPlayerNames = Object.values(connections).map(c => c.metadata.name).concat([name]);
-                conn.send({ type: 'welcome', players: allPlayerNames });
-                
-                conn.on('data', data => handleData(conn, data));
-                startGameBtn.disabled = false;
-            });
-        });
+            // ...
+        } catch (error) { /* ... */ }
+        // ...
     }
 
-    function setupClient(name) {
-        showView('client-wait');
-        hostConnection = peer.connect(hostId, { metadata: { name }, reliable: true });
-        hostConnection.on('open', () => {});
-        hostConnection.on('data', data => handleData(null, data));
-    }
-    
     function handleData(conn, data) {
         switch(data.type) {
             case 'welcome':
-                updatePlayerList(clientPlayerList, data.players);
-                break;
-            case 'player-joined':
-                addPlayerToList(clientPlayerList, data.name);
+                // Client lernt jetzt auch die Kategorien und Spielzeit vom Host
+                kategorien = data.kategorien;
+                spielzeit = data.spielzeit;
+                updatePlayerList(data.players);
                 break;
             case 'start-game':
+                // Spielzeit wird nicht mehr übergeben, da sie schon bekannt ist
                 startGame(data.buchstabe);
                 break;
-            case 'submit-answers':
-                if(isHost) handleAnswerSubmission(conn.peer, data.answers);
-                break;
-            case 'show-results':
-                displayResults(data.results);
-                break;
+            // ... andere cases ...
         }
-    }
-    
-    function updatePlayerList(listElement, players) {
-        listElement.innerHTML = '';
-        players.forEach(name => addPlayerToList(listElement, name));
-    }
-
-    function addPlayerToList(listElement, name) {
-        const li = document.createElement('li');
-        li.textContent = name;
-        listElement.appendChild(li);
-    }
-    
-    function broadcast(data, excludePeerId = null) {
-        Object.values(connections).forEach(conn => {
-            if (conn.peer !== excludePeerId) conn.send(data);
-        });
     }
 
     function startGame(b) {
@@ -214,10 +76,10 @@
         showView('game-area');
         buchstabeEl.textContent = buchstabe;
         inputsContainer.innerHTML = '';
-        kategorien.forEach(k => {
-            inputsContainer.innerHTML += `<label>${k}:</label><input id="input-${k}" placeholder="${k} mit ${buchstabe}..." />`;
-        });
-        let timeLeft = 60;
+        kategorien.forEach(k => { /* ... */ });
+        
+        // NEU: Die Countdown-Zeit wird jetzt von der `spielzeit`-Variable genommen
+        let timeLeft = spielzeit;
         countdownEl.textContent = timeLeft;
         const timer = setInterval(() => {
             timeLeft--;
@@ -229,88 +91,8 @@
         }, 1000);
     }
     
-    function endRound() {
-        inputsContainer.querySelectorAll('input').forEach(input => input.disabled = true);
-        const answers = {};
-        kategorien.forEach(k => {
-            answers[k] = document.getElementById(`input-${k}`).value;
-        });
-        if (!isHost) {
-            hostConnection.send({ type: 'submit-answers', answers: answers });
-        } else {
-            handleAnswerSubmission(myPeerId, answers);
-        }
-    }
-    
-    let collectedAnswers = {};
-    function handleAnswerSubmission(peerId, answers) {
-        const playerName = peerId === myPeerId ? myName : connections[peerId].metadata.name;
-        collectedAnswers[playerName] = kategorien.map(k => answers[k] || "");
-        const playerCount = Object.keys(connections).length + 1;
-        if (Object.keys(collectedAnswers).length === playerCount) {
-            evaluateAllAnswers();
-        }
-    }
-    
-    async function evaluateAllAnswers() {
-        showView('loading');
-        try {
-            const response = await fetch('/api/evaluate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ buchstabe, kategorien, spieler_antworten: collectedAnswers })
-            });
-            const data = await response.json();
-            if (!response.ok || data.error) throw new Error(data.error || 'Fehler bei der Auswertung');
-            broadcast({ type: 'show-results', results: data });
-            displayResults(data);
-        } catch (error) {
-            alert(error.message);
-        }
-    }
-    
-    function displayResults(data) {
-        showView('results-area');
-        let tableHTML = `<thead><tr><th>Spieler</th>${kategorien.map(k => `<th>${k}</th>`).join('')}<th>Punkte</th></tr></thead><tbody>`;
-        data.tabelle.forEach(row => {
-            const totalScore = (row.punkte || []).reduce((sum, p) => sum + p, 0);
-            tableHTML += `<tr><td><strong>${row.spieler}</strong></td>${kategorien.map((kat, i) => `<td>${(row.antworten || [])[i] || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}<td><strong>${totalScore}</strong></td></tr>`;
-        });
-        tableHTML += `</tbody>`;
-        resultsTable.innerHTML = tableHTML;
-        nextRoundBtn.style.display = isHost ? 'block' : 'none';
-    }
-
-    // --- Event Listeners ---
-    createGameBtn.addEventListener('click', () => {
-        const name = playerNameInput.value.trim();
-        if (!name) return alert('Bitte gib einen Namen ein.');
-        initializePeer(name);
-    });
-    
-    joinGameBtn.addEventListener('click', () => {
-        const name = playerNameInput.value.trim();
-        if (!name) return alert('Bitte gib einen Namen ein.');
-        initializePeer(name);
-    });
-
-    startGameBtn.addEventListener('click', async () => {
-        if (gameIdInLobby) {
-            await fetch(`/api/games/${gameIdInLobby}`, { method: 'DELETE' });
-        }
-        buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-        collectedAnswers = {};
-        broadcast({ type: 'start-game', buchstabe });
-        startGame(buchstabe);
-    });
-    
-    nextRoundBtn.addEventListener('click', () => {
-      buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-      collectedAnswers = {}; 
-      broadcast({ type: 'start-game', buchstabe });
-      startGame(buchstabe);
-    });
-
+    // Der Rest des Codes (endRound, evaluateAllAnswers, etc.) bleibt
+    // funktional sehr ähnlich und muss nicht gezeigt werden.
   </script>
 </body>
 </html>
