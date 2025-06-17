@@ -38,21 +38,22 @@
 
         async function fetchGames() {
             try {
-                // Annahme: Die neue API liegt unter /api/games
                 const response = await fetch('/api/games');
                 if (!response.ok) {
                     throw new Error('Netzwerk-Antwort war nicht in Ordnung.');
                 }
                 const games = await response.json();
                 
-                gameList.innerHTML = ''; // Liste leeren
+                gameList.innerHTML = ''; 
                 if (games.length === 0) {
                     gameList.innerHTML = '<p class="no-games">Aktuell sind keine Spiele offen. Erstelle ein neues!</p>';
                 } else {
                     games.forEach(game => {
                         const li = document.createElement('li');
                         const gameLink = document.createElement('a');
-                        gameLink.href = `/index.html?hostId=${game.hostId}`; // Verlinkt zum Spiel
+                        // WICHTIGE ÄNDERUNG: Leitet zur Spielseite ohne Kategorien, da der Host die Kontrolle hat.
+                        // Clients nehmen an, was der Host vorgibt.
+                        gameLink.href = `/index.html?hostId=${game.hostId}&gameName=${encodeURIComponent(game.gameName)}`;
                         gameLink.textContent = game.gameName;
                         
                         const hostInfo = document.createElement('span');
@@ -71,12 +72,19 @@
 
         newGameBtn.addEventListener('click', () => {
             const gameName = prompt("Wie soll dein Spiel heißen?", "Lustige Runde");
-            const playerName = prompt("Wie lautet dein Name?", "Host");
+            if (!gameName) return;
 
-            if (gameName && playerName) {
-                // Leitet zur Spielseite weiter und übergibt Infos für die Erstellung
-                window.location.href = `/index.html?createGame=true&gameName=${encodeURIComponent(gameName)}&playerName=${encodeURIComponent(playerName)}`;
-            }
+            const playerName = prompt("Wie lautet dein Name?", "Host");
+            if (!playerName) return;
+
+            // ===== NEUER TEIL: KATEGORIEN ABFRAGEN =====
+            const defaultKategorien = "Stadt,Land,Fluss,Beruf,Tier";
+            const kategorienString = prompt("Welche Kategorien? (durch Komma getrennt)", defaultKategorien);
+            if (!kategorienString) return;
+            // ===========================================
+
+            // Leitet zur Spielseite weiter und übergibt ALLE Infos für die Erstellung
+            window.location.href = `/index.html?createGame=true&gameName=${encodeURIComponent(gameName)}&playerName=${encodeURIComponent(playerName)}&kategorien=${encodeURIComponent(kategorienString)}`;
         });
 
         // Lade Spiele beim Start und dann alle 15 Sekunden
