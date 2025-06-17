@@ -1,8 +1,7 @@
 /**
  * api/index.js
- * Version 10 des einheitlichen Backends.
- * NEU: Loggt die rohe Text-Antwort der Gemini-API vor dem Parsen,
- * um JSON-Formatierungsfehler zu finden.
+ * Dies ist die finale, korrekte und vollständige Version des einheitlichen Backends.
+ * Es enthält die Lobby-Verwaltung und die Spiel-Auswertung in einer Datei.
  */
 
 const express = require('express');
@@ -24,26 +23,81 @@ try {
         });
     }
 } catch (e) {
-    console.error('Firebase Service Account Initialisierung fehlgeschlagen.', e);
+    console.error('Firebase Service Account Initialisierung fehlgeschlagen. Überprüfen Sie die Umgebungsvariable in Vercel.', e);
 }
 const db = admin.firestore();
 const gamesCollection = db.collection('open_games');
 
 
-// --- Statische Routen ---
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'lobby.html')));
-app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, '..', 'index.html')));
-app.get('/lobby.html', (req, res) => res.sendFile(path.join(__dirname, '..', 'lobby.html')));
+// --- Statische Routen für lokales Testen & direkten Aufruf ---
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'lobby.html'));
+});
+app.get('/index.html', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+app.get('/lobby.html', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'lobby.html'));
+});
 
 
 // ===========================================
 // LOBBY-API ROUTEN
 // ===========================================
-// Der Code für die Lobby-Routen bleibt unverändert.
-app.get('/api/games', async (req, res) => { /* ... unverändert ... */ });
-app.post('/api/games', async (req, res) => { /* ... unverändert ... */ });
-app.delete('/api/games/:id', async (req, res) => { /* ... unverändert ... */ });
-app.delete('/api/games/flush', async (req, res) => { /* ... unverändert ... */ });
+
+app.get('/api/games', async (req, res) => {
+    try {
+        const snapshot = await gamesCollection.orderBy('createdAt', 'desc').get();
+        const games = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.status(200).json(games);
+    } catch (error) {
+        console.error('Fehler beim Abrufen der Spiele:', error);
+        res.status(500).json({ error: 'Spiele konnten nicht geladen werden.' });
+    }
+});
+
+app.post('/api/games', async (req, res) => {
+    try {
+        const { gameName, hostId, hostName, kategorien, spielzeit } = req.body;
+        if (!gameName || !hostId || !hostName || !kategorien || !spielzeit) {
+            return res.status(400).json({ error: 'Alle Felder (Spielname, Host-ID, Host-Name, Kategorien, Spielzeit) sind erforderlich.' });
+        }
+        const newGame = { gameName, hostId, hostName, kategorien, spielzeit, createdAt: new Date() };
+        const docRef = await gamesCollection.add(newGame);
+        res.status(201).json({ id: docRef.id, ...newGame });
+    } catch (error) {
+        console.error('Fehler beim Erstellen des Spiels:', error);
+        res.status(500).json({ error: 'Spiel konnte nicht erstellt werden.' });
+    }
+});
+
+app.delete('/api/games/:id', async (req, res) => {
+    try {
+        await gamesCollection.doc(req.params.id).delete();
+        res.status(200).json({ message: 'Spiel erfolgreich aus der Lobby entfernt.' });
+    } catch (error) {
+        console.error('Fehler beim Löschen des Spiels:', error);
+        res.status(500).json({ error: 'Spiel konnte nicht entfernt werden.' });
+    }
+});
+
+app.delete('/api/games/flush', async (req, res) => {
+    try {
+        const snapshot = await gamesCollection.get();
+        if (snapshot.empty) {
+            return res.status(200).json({ message: 'Keine alten Spiele zum Löschen gefunden.' });
+        }
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+        res.status(200).json({ message: `${snapshot.size} alte Spiele wurden erfolgreich gelöscht.` });
+    } catch (error) {
+        console.error('Fehler beim Aufräumen der Spiele:', error);
+        res.status(500).json({ error: 'Spiele konnten nicht aufgeräumt werden.' });
+    }
+});
 
 
 // ===========================================
@@ -70,20 +124,9 @@ app.post('/api/evaluate', async (req, res) => {
     }
     const prompt = `Du bist ein fairer, konsistenter und strenger "Stadt, Land, Fluss"-Schiedsrichter. Deine Hauptaufgabe ist es, die Regeln genau anzuwenden und Schummeln zu verhindern, aber gleichzeitig gebräuchliches Allgemeinwissen zu akzeptieren. Bewerte die folgenden Antworten für den Buchstaben "${buchstabe}". Regeln: 1. Korrekte Schreibweise: Keine Tippfehler. "Berliin" ist ungültig. 2. Exakter Anfangsbuchstabe: Muss mit "${buchstabe}" beginnen. Das Verändern des Anfangsbuchstabens (z.B. "Cänguruh" für "C") ist verboten. 3. Gültigkeit der Kategorie: Muss eindeutig in die Kategorie passen. 4. Singular und Plural: Korrekt gebildete Singular- und Pluralformen sind beide gültig (z.B. "Lachs" und "Lachse"). 5. Allgemeinwissen: Gebräuchliche Namen sind gültig (z.B. "Irland"). Sei nicht pedantisch. 6. Leere Antworten: Sind immer ungültig. Die Kategorien sind: ${kategorien.join(', ')}. Die Antworten der Spieler sind: ${JSON.stringify(spieler_antworten)} Gib deine Antwort AUSSCHLIESSLICH im folgenden JSON-Format zurück, ohne weiteren Text: { "Spieler 1": { "Stadt": true, "Land": false }, "Spieler 2": { "Stadt": true, "Land": true } }`;
     const requestBody = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } };
-
-    let rawResponseText = ""; // Variable für die rohe Antwort definieren
     try {
         const geminiResponse = await retry(async () => axios.post(API_URL, requestBody, { timeout: 20000 }), { retries: 1 });
-        
-        // ========= NEUER DEBUG-TEIL =========
-        rawResponseText = geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawResponseText) {
-            throw new Error('Kein Text in der Antwort der Gemini API gefunden.');
-        }
-        console.log("DEBUG: Rohe Antwort von Gemini:", rawResponseText);
-        // ===================================
-        
-        const validationData = JSON.parse(rawResponseText);
+        const validationData = JSON.parse(geminiResponse.data.candidates[0].content.parts[0].text);
         
         const punkteTabelle = {};
         const spielerNamen = Object.keys(spieler_antworten);
@@ -118,12 +161,12 @@ app.post('/api/evaluate', async (req, res) => {
             punkte: punkteTabelle[spieler]
         }));
         res.json({ tabelle: finaleTabelle });
-
     } catch (error) {
-        console.error(`Fehler bei der Verarbeitung von /api/evaluate. Roh-Antwort war: "${rawResponseText}"`, error);
-        res.status(502).json({ error: 'Fehler bei der Auswertung. Die KI hat ein ungültiges Format geliefert.' });
+        console.error(`Fehler bei der Verarbeitung von /api/evaluate: ${error.message}`);
+        res.status(502).json({ error: 'Fehler bei der Auswertung. Möglicherweise eine ungültige API-Antwort.' });
     }
 });
 
 
+// Exportiert die gesamte `app` für Vercel. Vercel startet den Server selbst.
 module.exports = app;
