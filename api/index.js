@@ -173,5 +173,6 @@ app.post('/api/evaluate', async (req, res) => {
     }
 });
 
+
 // Exportiert die gesamte `app` für Vercel. Vercel startet den Server selbst.
 module.exports = app;
