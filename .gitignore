@@ -1,0 +1,11 @@
+# Ignoriere den Ordner, den npm/node erstellt
+node_modules/
+
+# Ignoriere lokale Umgebungsvariablen-Dateien
+.env
+
+# Ignoriere alle Service-Account-Schlüssel
+*.json
+
+# Ignoriere Vercel-spezifische Konfigurationen
+.vercel/
