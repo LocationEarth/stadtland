@@ -6,50 +6,36 @@
   <title>Stadt-Land-Fluss - Spiel</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f8f9fa; color: #212529; }
-    .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    h1, h2, h3 { color: #343a40; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
+    body { font-family: sans-serif; line-height: 1.6; margin: 20px; background-color: #f8f9fa; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; }
     .view { display: none; }
-    table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+    .info-box { display: flex; justify-content: space-between; background: #e9ecef; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+    .info-box span { font-size: 1.2em; font-weight: bold; }
+    #player-list li { list-style-type: '✅'; padding-left: 10px; font-size: 1.1em; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
     th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
-    th { background-color: #e9ecef; }
+    th { background-color: #f1f3f5; }
     label { display: block; font-weight: bold; margin-bottom: 5px; }
-    input { width: calc(100% - 24px); margin-bottom: 15px; padding: 10px; border-radius: 4px; border: 1px solid #ced4da; font-size: 16px; }
-    button { padding: 12px 20px; margin: 10px 5px 10px 0; border: none; border-radius: 4px; color: #fff; background-color: #007bff; cursor: pointer; font-size: 16px; }
-    button:hover { background-color: #0056b3; }
-    button:disabled { background-color: #6c757d; cursor: not-allowed; }
-    .info-box { background-color: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-    #player-list li { list-style-type: '✅'; padding-left: 10px; }
+    input { width: calc(100% - 24px); margin-bottom: 15px; padding: 10px; font-size: 1em; }
+    button { padding: 10px 15px; font-size: 1em; cursor: pointer; border: none; border-radius: 5px; color: #fff; background-color: #007bff; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1 id="game-title">Stadt-Land-Fluss</h1>
-    
+    <h1 id="game-title"></h1>
     <div id="lobby-view" class="view">
-      <h3 id="lobby-header">Verbinde...</h3>
-      <p id="lobby-text"></p>
-      <h3>Spieler in der Lobby</h3>
-      <ul id="player-list"></ul>
-      <button id="start-game-btn" style="display: none;">Spiel starten</button>
+        <h3 id="lobby-header">Verbinde...</h3><p id="lobby-text"></p>
+        <h3>Spieler:</h3><ul id="player-list"></ul>
+        <button id="start-game-btn" style="display:none;">Spiel starten</button>
     </div>
-
     <div id="game-area" class="view">
-      <div class="info-box">
-        <span>Buchstabe: <span id="buchstabe"></span></span>
-        <span>Zeit: <span id="countdown"></span>s</span>
-      </div>
-      <form id="playerForm">
-        <div id="inputs"></div>
-      </form>
+        <div class="info-box"><span>Buchstabe: <span id="buchstabe"></span></span><span>Zeit: <span id="countdown"></span>s</span></div>
+        <form id="playerForm"><div id="inputs"></div></form>
     </div>
-    
-    <div id="loading" class="view"><p><strong>Ergebnisse werden ausgewertet...</strong></p></div>
-
+    <div id="loading" class="view"><p>Werte aus...</p></div>
     <div id="results-area" class="view">
-      <h2>Ergebnisse</h2>
-      <table id="results-table"></table>
-      <button id="next-round-btn">Nächste Runde</button>
+        <h2>Ergebnisse</h2><table id="results-table"></table>
+        <button id="next-round-btn">Nächste Runde</button>
     </div>
   </div>
 
@@ -74,26 +60,14 @@
         const resultsTable = document.getElementById('results-table');
         const nextRoundBtn = document.getElementById('next-round-btn');
         
-        function showView(viewId) {
-            allViews.forEach(view => view.style.display = 'none');
-            document.getElementById(viewId).style.display = 'block';
-        }
-
+        function showView(viewId) { allViews.forEach(v => v.style.display = 'none'); document.getElementById(viewId).style.display = 'block'; }
         document.getElementById('game-title').textContent = gameName;
         
         function initializePeer() {
             showView('lobby-view');
-            const peerConfig = {
-                debug: 2,
-                config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
-            };
+            const peerConfig = { debug: 2, config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }] } };
             peer = new Peer(peerConfig);
-
-            peer.on('open', id => {
-                myPeerId = id;
-                if (isHost) setupHost();
-                else setupClient();
-            });
+            peer.on('open', id => { myPeerId = id; if (isHost) setupHost(); else setupClient(); });
             peer.on('error', err => alert('PeerJS Fehler: ' + err.type));
         }
 
@@ -102,29 +76,25 @@
             startGameBtn.style.display = 'block';
             startGameBtn.disabled = true;
             addPlayerToList(myName + " (Host)");
-            
             try {
-                const response = await fetch('/api/games', {
+                const res = await fetch('/api/games', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ gameName, hostId: myPeerId, hostName: myName, kategorien, spielzeit })
                 });
-                const createdGame = await response.json();
-                if (!response.ok) throw new Error(createdGame.error || "Serverfehler");
-                gameIdInDb = createdGame.id;
-            } catch (error) {
-                alert('Lobby konnte nicht erstellt werden: ' + error.message);
-            }
-
-            peer.on('connection', conn => {
-                conn.on('open', () => {
-                    const clientName = conn.metadata.name;
-                    connections[conn.peer] = conn;
-                    addPlayerToList(clientName);
-                    broadcast({ type: 'player-joined', name: clientName }, conn.peer);
-                    const allPlayerNames = Object.values(connections).map(c => c.metadata.name).concat([myName]);
-                    conn.send({ type: 'welcome', players: allPlayerNames, kategorien, spielzeit });
-                    conn.on('data', data => handleData(conn, data));
+                const game = await res.json();
+                if (!res.ok) throw new Error(game.error);
+                gameIdInDb = game.id;
+            } catch (e) { alert('Lobby konnte nicht erstellt werden: ' + e.message); }
+            peer.on('connection', c => {
+                c.on('open', () => {
+                    const cN = c.metadata.name;
+                    connections[c.peer] = c;
+                    addPlayerToList(cN);
+                    broadcast({ type: 'player-joined', name: cN }, c.peer);
+                    const allPN = Object.values(connections).map(c => c.metadata.name).concat([myName]);
+                    c.send({ type: 'welcome', players: allPN, kategorien, spielzeit });
+                    c.on('data', d => handleData(c, d));
                     startGameBtn.disabled = false;
                 });
             });
@@ -132,95 +102,85 @@
 
         function setupClient() {
             document.getElementById('lobby-header').textContent = 'Beigetreten!';
-            document.getElementById('lobby-text').textContent = 'Warte, bis der Host das Spiel startet...';
+            document.getElementById('lobby-text').textContent = 'Warte auf Spielstart...';
             hostConnection = peer.connect(hostId, { metadata: { name: myName }, reliable: true });
-            hostConnection.on('data', data => handleData(null, data));
+            hostConnection.on('data', d => handleData(null, d));
         }
         
-        function handleData(conn, data) {
-            switch(data.type) {
-                case 'welcome':
-                    kategorien = data.kategorien;
-                    spielzeit = data.spielzeit;
-                    updatePlayerList(data.players);
-                    break;
-                case 'player-joined': addPlayerToList(data.name); break;
-                case 'start-game': startGame(data.buchstabe); break;
-                case 'submit-answers': if(isHost) handleAnswerSubmission(conn.peer, data.answers); break;
-                case 'show-results': displayResults(data.results); break;
+        function handleData(c, d) {
+            switch(d.type) {
+                case 'welcome': kategorien = d.kategorien; spielzeit = d.spielzeit; updatePlayerList(d.players); break;
+                case 'player-joined': addPlayerToList(d.name); break;
+                case 'start-game': startGame(d.buchstabe); break;
+                case 'submit-answers': if(isHost) handleAnswerSubmission(c.peer, d.answers); break;
+                case 'show-results': displayResults(d.results); break;
             }
         }
         
-        function updatePlayerList(players) { playerList.innerHTML = ''; players.forEach(name => addPlayerToList(name)); }
-        function addPlayerToList(name) { const li = document.createElement('li'); li.textContent = name; playerList.appendChild(li); }
-        function broadcast(data, excludePeerId = null) { Object.values(connections).forEach(conn => { if (conn.peer !== excludePeerId) conn.send(data); }); }
+        function updatePlayerList(p) { playerList.innerHTML = ''; p.forEach(addPlayerToList); }
+        function addPlayerToList(n) { const li = document.createElement('li'); li.textContent = n; playerList.appendChild(li); }
+        function broadcast(d, e = null) { Object.values(connections).forEach(c => { if(c.peer !== e) c.send(d); }); }
 
         function startGame(b) {
             buchstabe = b;
             showView('game-area');
-            buchstabeEl.textContent = buchstabe;
+            buchstabeEl.textContent = b;
             inputsContainer.innerHTML = '';
             kategorien.forEach(k => {
-                const inputDiv = document.createElement('div');
-                const placeholder = k.toLowerCase() === 'block' ? 'Blockiere ein Wort...' : `${k} mit ${buchstabe}...`;
-                inputDiv.innerHTML = `<label for="input-${k}">${k}:</label><input id="input-${k}" placeholder="${placeholder}" />`;
-                inputsContainer.appendChild(inputDiv);
+                const p = k.toLowerCase() === 'block' ? 'Blockiere ein Wort...' : `${k} mit ${b}...`;
+                inputsContainer.innerHTML += `<div><label>${k}:</label><input id="input-${k}" placeholder="${p}" /></div>`;
             });
-            let timeLeft = spielzeit;
-            countdownEl.textContent = timeLeft;
+            let tL = spielzeit;
+            countdownEl.textContent = tL;
             const timer = setInterval(() => {
-                timeLeft--;
-                countdownEl.textContent = timeLeft;
-                if (timeLeft <= 0) { clearInterval(timer); endRound(); }
+                tL--;
+                countdownEl.textContent = tL;
+                if (tL <= 0) { clearInterval(timer); endRound(); }
             }, 1000);
         }
         
         let collectedAnswers = {};
         function endRound() {
-            inputsContainer.querySelectorAll('input').forEach(input => input.disabled = true);
-            const answers = {};
-            kategorien.forEach(k => { answers[k] = document.getElementById(`input-${k}`).value; });
-            if (!isHost) { hostConnection.send({ type: 'submit-answers', answers }); } 
-            else { handleAnswerSubmission(myPeerId, answers); }
+            const a = {};
+            kategorien.forEach(k => { a[k] = document.getElementById(`input-${k}`).value; });
+            if (!isHost) { hostConnection.send({ type: 'submit-answers', answers: a }); } 
+            else { handleAnswerSubmission(myPeerId, a); }
         }
         
-        function handleAnswerSubmission(peerId, answers) {
-            const playerName = peerId === myPeerId ? myName : connections[peerId].metadata.name;
-            collectedAnswers[playerName] = kategorien.map(k => answers[k] || "");
-            const playerCount = Object.keys(connections).length + 1;
-            if (Object.keys(collectedAnswers).length === playerCount) { evaluateAllAnswers(); }
+        function handleAnswerSubmission(pId, a) {
+            const pN = pId === myPeerId ? myName : connections[pId].metadata.name;
+            collectedAnswers[pN] = kategorien.map(k => a[k] || "");
+            const pC = Object.keys(connections).length + 1;
+            if (Object.keys(collectedAnswers).length === pC) evaluateAllAnswers();
         }
         
         async function evaluateAllAnswers() {
             showView('loading');
             try {
-                const response = await fetch('/api/evaluate', {
+                const res = await fetch('/api/evaluate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ buchstabe, kategorien, spieler_antworten: collectedAnswers })
                 });
-                const data = await response.json();
-                if (!response.ok || data.error) throw new Error(data.error || 'Fehler bei der Auswertung');
+                const data = await res.json();
+                if (!res.ok || data.error) throw new Error(data.error);
                 broadcast({ type: 'show-results', results: data });
                 displayResults(data);
-            } catch (error) {
-                alert(error.message);
-                showView('lobby-view');
-            }
+            } catch (e) { alert(e.message); showView('lobby-view'); }
         }
         
         function displayResults(data) {
             showView('results-area');
-            const anzeigeKategorien = kategorien.filter(k => k.toLowerCase() !== 'block');
-            let tableHTML = `<thead><tr><th>Spieler</th>${anzeigeKategorien.map(k => `<th>${k}</th>`).join('')}<th>Blockwort</th><th>Punkte</th></tr></thead><tbody>`;
-            if (data && data.tabelle && Array.isArray(data.tabelle)) {
+            const anzeigeKats = kategorien.filter(k => k.toLowerCase() !== 'block');
+            let tHTML = `<thead><tr><th>Spieler</th>${anzeigeKats.map(k => `<th>${k}</th>`).join('')}<th>Blockwort</th><th>Punkte</th></tr></thead><tbody>`;
+            if (data && data.tabelle) {
                 data.tabelle.forEach(row => {
-                    const totalScore = (row.punkte || []).reduce((sum, p) => sum + p, 0);
-                    tableHTML += `<tr><td><strong>${row.spieler}</strong></td>${(row.antworten || []).map((ans, i) => `<td>${ans || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}<td><em>${row.blockWort || "-"}</em></td><td><strong>${totalScore}</strong></td></tr>`;
+                    const tS = (row.punkte || []).reduce((s, p) => s + p, 0);
+                    tHTML += `<tr><td><strong>${row.spieler}</strong></td>${(row.antworten || []).map((a, i) => `<td>${a || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}<td><em>${row.blockWort || "-"}</em></td><td><strong>${tS}</strong></td></tr>`;
                 });
             }
-            tableHTML += `</tbody>`;
-            resultsTable.innerHTML = tableHTML;
+            tHTML += `</tbody>`;
+            resultsTable.innerHTML = tHTML;
             nextRoundBtn.style.display = isHost ? 'block' : 'none';
         }
 
