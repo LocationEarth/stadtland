@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spiel beitreten</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f8f9fa; color: #212529; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { max-width: 500px; width: 100%; margin: 0 auto; background-color: #fff; padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #343a40; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; margin-top: 20px; }
+        input { width: calc(100% - 24px); padding: 12px; border-radius: 4px; border: 1px solid #ced4da; font-size: 16px; }
+        button { width: 100%; padding: 12px 20px; margin-top: 20px; border: none; border-radius: 4px; color: #fff; background-color: #007bff; cursor: pointer; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="game-title">Spiel beitreten</h1>
+        <p>Gib deinen Namen ein, um dem Spiel beizutreten.</p>
+        <form id="join-form">
+            <label for="player-name">Dein Name:</label>
+            <input type="text" id="player-name" required placeholder="Spielername">
+            <button type="submit">Jetzt beitreten</button>
+        </form>
+        <a href="/lobby.html" style="display: block; text-align: center; margin-top: 20px;">Zurück zur Lobby</a>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const hostId = urlParams.get('hostId');
+            const gameName = urlParams.get('gameName');
+
+            if (!hostId || !gameName) {
+                alert("Fehler: Spielinformationen nicht gefunden. Kehre zur Lobby zurück.");
+                window.location.href = '/lobby.html';
+                return;
+            }
+
+            document.getElementById('game-title').textContent = `"${gameName}" beitreten`;
+
+            document.getElementById('join-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const playerName = document.getElementById('player-name').value.trim();
+                if (playerName) {
+                    // Baue die finale URL für die Spielseite zusammen
+                    const finalParams = new URLSearchParams({
+                        hostId: hostId,
+                        gameName: gameName,
+                        playerName: playerName
+                    });
+                    window.location.href = `/index.html?${finalParams.toString()}`;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
