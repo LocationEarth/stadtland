@@ -1,47 +1,144 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stadt-Land-Fluss - Spiel</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <style>
-        /* CSS bleibt unverändert */
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stadt-Land-Fluss - Spiel</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    body { font-family: sans-serif; line-height: 1.6; margin: 20px; background-color: #f8f9fa; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .view { display: none; }
+    .info-box { display: flex; justify-content: space-between; background: #e9ecef; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+    .info-box span { font-size: 1.2em; font-weight: bold; }
+    #player-list li { list-style-type: '✅'; padding-left: 10px; font-size: 1.1em; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+    th { background-color: #f1f3f5; }
+    button { padding: 10px 15px; font-size: 1em; cursor: pointer; border: none; border-radius: 5px; color: #fff; background-color: #007bff; }
+  </style>
 </head>
 <body>
   <div class="container">
-    <h1 id="game-title"></h1>
-    <div id="lobby-view" class="view">...</div>
-    <div id="game-area" class="view">
-        <div class="info-box">...</div>
-        <form id="playerForm">
-            <div id="inputs"></div>
-            <!-- Das Block-Feld wird hier automatisch durch die Logik hinzugefügt -->
-        </form>
+    <h1 id="game-title">Stadt-Land-Fluss</h1>
+    <div id="lobby-view" class="view">
+      <h3 id="lobby-header">Verbinde...</h3>
+      <p id="lobby-text"></p>
+      <h3>Spieler in der Lobby</h3>
+      <ul id="player-list"></ul>
+      <button id="start-game-btn" style="display: none;">Spiel starten</button>
     </div>
-    <div id="loading" class="view">...</div>
-    <div id="results-area" class="view">...</div>
+    <div id="game-area" class="view">
+      <div class="info-box">
+        <span>Buchstabe: <span id="buchstabe"></span></span>
+        <span>Zeit: <span id="countdown"></span>s</span>
+      </div>
+      <form id="playerForm"><div id="inputs"></div></form>
+    </div>
+    <div id="loading" class="view"><p>Ergebnisse werden ausgewertet...</p></div>
+    <div id="results-area" class="view">
+      <h2>Ergebnisse</h2>
+      <table id="results-table"></table>
+      <button id="next-round-btn">Nächste Runde</button>
+    </div>
   </div>
 
   <script>
-    // Alle globalen Variablen und die Initialisierungslogik bleiben identisch.
     const urlParams = new URLSearchParams(window.location.search);
     const hostId = urlParams.get('hostId');
+    const isCreatingGame = urlParams.get('createGame') === 'true';
+    const gameName = urlParams.get('gameName') || "Anonymes Spiel";
+    const myName = urlParams.get('playerName');
     let kategorien = (urlParams.get('kategorien') || 'Stadt,Land,Fluss,Block').split(',');
-    // ... restliche Variablen ...
+    let spielzeit = parseInt(urlParams.get('spielzeit'), 10) || 60;
 
-    // Die Logik, um die Eingabefelder zu erstellen, ist die einzige wichtige Änderung hier.
-    // Sie erstellt jetzt auch das "Block"-Feld.
+    let peer, myPeerId, isHost = isCreatingGame, connections = {}, hostConnection, buchstabe, gameIdInDb;
+    
+    const allViews = document.querySelectorAll('.view');
+    const playerList = document.getElementById('player-list');
+    const startGameBtn = document.getElementById('start-game-btn');
+    const buchstabeEl = document.getElementById('buchstabe');
+    const countdownEl = document.getElementById('countdown');
+    const inputsContainer = document.getElementById('inputs');
+    const resultsTable = document.getElementById('results-table');
+    const nextRoundBtn = document.getElementById('next-round-btn');
+
+    function showView(viewId) {
+        allViews.forEach(view => view.style.display = 'none');
+        document.getElementById(viewId).style.display = 'block';
+    }
+
+    document.getElementById('game-title').textContent = gameName;
+
+    function initializePeer() {
+        showView('lobby-view');
+        const peerConfig = { debug: 2, config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }] } };
+        peer = new Peer(peerConfig);
+        peer.on('open', id => { myPeerId = id; if (isHost) setupHost(); else setupClient(); });
+        peer.on('error', err => alert('PeerJS Fehler: ' + err.type));
+    }
+
+    async function setupHost() {
+        document.getElementById('lobby-header').textContent = "Warten auf Spieler...";
+        startGameBtn.style.display = 'block';
+        startGameBtn.disabled = true;
+        addPlayerToList(myName + " (Host)");
+        try {
+            const response = await fetch('/api/games', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gameName, hostId: myPeerId, hostName: myName, kategorien, spielzeit })
+            });
+            const createdGame = await response.json();
+            if (!response.ok) throw new Error(createdGame.error);
+            gameIdInDb = createdGame.id;
+        } catch (error) { alert('Lobby konnte nicht erstellt werden: ' + error.message); }
+        peer.on('connection', conn => {
+            conn.on('open', () => {
+                const clientName = conn.metadata.name;
+                connections[conn.peer] = conn;
+                addPlayerToList(clientName);
+                broadcast({ type: 'player-joined', name: clientName }, conn.peer);
+                const allPlayerNames = Object.values(connections).map(c => c.metadata.name).concat([myName]);
+                conn.send({ type: 'welcome', players: allPlayerNames, kategorien, spielzeit });
+                conn.on('data', data => handleData(conn, data));
+                startGameBtn.disabled = false;
+            });
+        });
+    }
+
+    function setupClient() {
+        document.getElementById('lobby-header').textContent = 'Beigetreten!';
+        document.getElementById('lobby-text').textContent = 'Warte, bis der Host das Spiel startet...';
+        hostConnection = peer.connect(hostId, { metadata: { name: myName }, reliable: true });
+        hostConnection.on('data', data => handleData(null, data));
+    }
+    
+    function handleData(conn, data) {
+        switch(data.type) {
+            case 'welcome':
+                kategorien = data.kategorien;
+                spielzeit = data.spielzeit;
+                updatePlayerList(data.players);
+                break;
+            case 'player-joined': addPlayerToList(data.name); break;
+            case 'start-game': startGame(data.buchstabe); break;
+            case 'submit-answers': if(isHost) handleAnswerSubmission(conn.peer, data.answers); break;
+            case 'show-results': displayResults(data.results); break;
+        }
+    }
+    
+    function updatePlayerList(players) { playerList.innerHTML = ''; players.forEach(addPlayerToList); }
+    function addPlayerToList(name) { const li = document.createElement('li'); li.textContent = name; playerList.appendChild(li); }
+    function broadcast(data, excludePeerId = null) { Object.values(connections).forEach(c => { if(c.peer !== excludePeerId) c.send(data); }); }
+
     function startGame(b) {
         buchstabe = b;
         showView('game-area');
         buchstabeEl.textContent = buchstabe;
         inputsContainer.innerHTML = '';
         kategorien.forEach(k => {
-            const placeholder = k.toLowerCase() === 'block' 
-                ? 'Blockiere ein Wort...' 
-                : `${k} mit ${buchstabe}...`;
+            const placeholder = k.toLowerCase() === 'block' ? 'Blockiere ein Wort...' : `${k} mit ${buchstabe}...`;
             inputsContainer.innerHTML += `<label>${k}:</label><input id="input-${k}" placeholder="${placeholder}" />`;
         });
         let timeLeft = spielzeit;
@@ -49,15 +146,75 @@
         const timer = setInterval(() => {
             timeLeft--;
             countdownEl.textContent = timeLeft;
-            if (timeLeft <= 0) {
-                clearInterval(timer);
-                endRound();
-            }
+            if (timeLeft <= 0) { clearInterval(timer); endRound(); }
         }, 1000);
     }
     
-    // Die restliche Logik (endRound, handleAnswerSubmission, etc.) bleibt funktional identisch,
-    // da sie das "Block"-Wort einfach als Teil des Antwort-Arrays behandelt.
+    let collectedAnswers = {};
+    function endRound() {
+        inputsContainer.querySelectorAll('input').forEach(input => input.disabled = true);
+        const answers = {};
+        kategorien.forEach(k => { answers[k] = document.getElementById(`input-${k}`).value; });
+        if (!isHost) { hostConnection.send({ type: 'submit-answers', answers }); } 
+        else { handleAnswerSubmission(myPeerId, answers); }
+    }
+    
+    function handleAnswerSubmission(peerId, answers) {
+        const playerName = peerId === myPeerId ? myName : connections[peerId].metadata.name;
+        collectedAnswers[playerName] = kategorien.map(k => answers[k] || "");
+        const playerCount = Object.keys(connections).length + 1;
+        if (Object.keys(collectedAnswers).length === playerCount) evaluateAllAnswers();
+    }
+    
+    async function evaluateAllAnswers() {
+        showView('loading');
+        try {
+            const response = await fetch('/api/evaluate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ buchstabe, kategorien, spieler_antworten: collectedAnswers })
+            });
+            const data = await response.json();
+            if (!response.ok || data.error) throw new Error(data.error);
+            broadcast({ type: 'show-results', results: data });
+            displayResults(data);
+        } catch (error) { alert(error.message); showView('lobby-view'); }
+    }
+    
+    function displayResults(data) {
+        showView('results-area');
+        let tableHTML = `<thead><tr><th>Spieler</th>${kategorien.map(k => k === 'Block' ? '' : `<th>${k}</th>`).join('')}<th>Punkte</th></tr></thead><tbody>`;
+        if (data && data.tabelle) {
+            data.tabelle.forEach(row => {
+                const totalScore = (row.punkte || []).reduce((sum, p) => sum + p, 0);
+                tableHTML += `<tr><td><strong>${row.spieler}</strong></td>${kategorien.filter(k => k.toLowerCase() !== 'block').map((kat, i) => `<td>${(row.antworten || [])[i] || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}<td><strong>${totalScore}</strong></td></tr>`;
+            });
+        }
+        tableHTML += `</tbody>`;
+        resultsTable.innerHTML = tableHTML;
+        nextRoundBtn.style.display = isHost ? 'block' : 'none';
+    }
+
+    startGameBtn.addEventListener('click', async () => {
+        if (gameIdInDb) await fetch(`/api/games/${gameIdInDb}`, { method: 'DELETE' });
+        buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+        collectedAnswers = {};
+        broadcast({ type: 'start-game', buchstabe });
+        startGame(buchstabe);
+    });
+    
+    nextRoundBtn.addEventListener('click', () => {
+      buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+      collectedAnswers = {}; 
+      broadcast({ type: 'start-game', buchstabe });
+      startGame(buchstabe);
+    });
+
+    if (!myName) {
+        alert("Fehler: Spielername nicht gefunden. Bitte kehre zur Lobby zurück.");
+    } else {
+        initializePeer();
+    }
   </script>
 </body>
 </html>
