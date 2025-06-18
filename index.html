@@ -16,8 +16,12 @@
     label { display: block; font-weight: bold; margin-bottom: 5px; }
     input { width: calc(100% - 24px); margin-bottom: 15px; padding: 10px; border-radius: 4px; border: 1px solid #ced4da; font-size: 16px; }
     button { padding: 12px 20px; margin: 10px 5px 10px 0; border: none; border-radius: 4px; color: #fff; background-color: #007bff; cursor: pointer; font-size: 16px; }
+    button:hover { background-color: #0056b3; }
+    button:disabled { background-color: #6c757d; cursor: not-allowed; }
     .info-box { background-color: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
     #player-list li { list-style-type: '✅'; padding-left: 10px; }
+    #debug-area { margin-top: 30px; border-top: 2px solid #dc3545; padding-top: 15px; }
+    #debug-output { background-color: #212529; color: #f8f9fa; padding: 15px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; max-height: 300px; overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -48,118 +52,264 @@
       <h2>Ergebnisse</h2>
       <table id="results-table"></table>
       <button id="next-round-btn">Nächste Runde</button>
+      <div id="debug-area" style="display: none;">
+          <h3>Host-Debug: Rohe Daten vom Server</h3>
+          <pre id="debug-output"></pre>
+      </div>
     </div>
   </div>
 
   <script>
-    // Alle globalen Variablen und Initialisierung bleiben gleich.
-    const urlParams = new URLSearchParams(window.location.search);
-    const hostId = urlParams.get('hostId');
-    const isCreatingGame = urlParams.get('createGame') === 'true';
-    const gameName = urlParams.get('gameName') || "Anonymes Spiel";
-    const myName = urlParams.get('playerName');
-    let kategorien = (urlParams.get('kategorien') || 'Stadt,Land,Fluss,Block').split(',');
-    let spielzeit = parseInt(urlParams.get('spielzeit'), 10) || 60;
-    let peer, myPeerId, isHost = isCreatingGame, connections = {}, hostConnection, buchstabe, gameIdInDb;
-    const allViews = document.querySelectorAll('.view');
-    const playerList = document.getElementById('player-list');
-    const startGameBtn = document.getElementById('start-game-btn');
-    const buchstabeEl = document.getElementById('buchstabe');
-    const countdownEl = document.getElementById('countdown');
-    const inputsContainer = document.getElementById('inputs');
-    const resultsTable = document.getElementById('results-table');
-    const nextRoundBtn = document.getElementById('next-round-btn');
-    
-    function showView(viewId) { /* ... unverändert ... */ }
-    document.getElementById('game-title').textContent = gameName;
-    
-    function initializePeer() { /* ... unverändert ... */ }
-    async function setupHost() { /* ... unverändert ... */ }
-    function setupClient() { /* ... unverändert ... */ }
-    function handleData(conn, data) { /* ... unverändert ... */ }
-    function updatePlayerList(players) { /* ... unverändert ... */ }
-    function addPlayerToList(name) { /* ... unverändert ... */ }
-    function broadcast(data, excludePeerId = null) { /* ... unverändert ... */ }
-    let collectedAnswers = {};
-    function endRound() { /* ... unverändert ... */ }
-    function handleAnswerSubmission(peerId, answers) { /* ... unverändert ... */ }
-    async function evaluateAllAnswers() { /* ... unverändert ... */ }
-    startGameBtn.addEventListener('click', async () => { /* ... unverändert ... */ });
-    nextRoundBtn.addEventListener('click', () => { /* ... unverändert ... */ });
+    // WICHTIGE ÄNDERUNG: Der gesamte Code wird erst ausgeführt, wenn die Seite komplett geladen ist.
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const hostId = urlParams.get('hostId');
+        const isCreatingGame = urlParams.get('createGame') === 'true';
+        const gameName = urlParams.get('gameName') || "Anonymes Spiel";
+        const myName = urlParams.get('playerName');
+        let kategorien = (urlParams.get('kategorien') || 'Stadt,Land,Fluss,Block').split(',');
+        let spielzeit = parseInt(urlParams.get('spielzeit'), 10) || 60;
 
-    // --- Geänderte Funktionen ---
-
-    function startGame(b) {
-        buchstabe = b;
-        showView('game-area');
-        buchstabeEl.textContent = buchstabe;
-        inputsContainer.innerHTML = '';
-        kategorien.forEach(k => {
-            // KOSMETISCHER FIX: Jedes Label/Input-Paar wird in ein eigenes div gepackt.
-            const inputDiv = document.createElement('div');
-            const placeholder = k.toLowerCase() === 'block' 
-                ? 'Blockiere ein Wort...' 
-                : `${k} mit ${buchstabe}...`;
-            inputDiv.innerHTML = `<label for="input-${k}">${k}:</label><input id="input-${k}" placeholder="${placeholder}" />`;
-            inputsContainer.appendChild(inputDiv);
-        });
-        let timeLeft = spielzeit;
-        countdownEl.textContent = timeLeft;
-        const timer = setInterval(() => {
-            timeLeft--;
-            countdownEl.textContent = timeLeft;
-            if (timeLeft <= 0) { clearInterval(timer); endRound(); }
-        }, 1000);
-    }
-    
-    function displayResults(data) {
-        showView('results-area');
-        // NEU: Bereite die Überschriften vor. "Block" wird als "Blockwort" angezeigt.
-        const anzeigeKategorien = kategorien.filter(k => k.toLowerCase() !== 'block');
-        let tableHTML = `<thead><tr><th>Spieler</th>${anzeigeKategorien.map(k => `<th>${k}</th>`).join('')}<th>Blockwort</th><th>Punkte</th></tr></thead><tbody>`;
+        let peer, myPeerId, isHost = isCreatingGame, connections = {}, hostConnection, buchstabe, gameIdInDb;
         
-        if (data && data.tabelle && Array.isArray(data.tabelle)) {
-            data.tabelle.forEach(row => {
-                const totalScore = (row.punkte || []).reduce((sum, p) => sum + p, 0);
-                tableHTML += `
-                  <tr>
-                    <td><strong>${row.spieler}</strong></td>
-                    ${(row.antworten || []).map((ans, i) => `<td>${ans || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}
-                    <td><em>${row.blockWort || "-"}</em></td>
-                    <td><strong>${totalScore}</strong></td>
-                  </tr>`;
+        const allViews = document.querySelectorAll('.view');
+        const playerList = document.getElementById('player-list');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const buchstabeEl = document.getElementById('buchstabe');
+        const countdownEl = document.getElementById('countdown');
+        const inputsContainer = document.getElementById('inputs');
+        const resultsTable = document.getElementById('results-table');
+        const nextRoundBtn = document.getElementById('next-round-btn');
+        const debugArea = document.getElementById('debug-area');
+        const debugOutput = document.getElementById('debug-output');
+        
+        function showView(viewId) {
+            allViews.forEach(view => view.style.display = 'none');
+            document.getElementById(viewId).style.display = 'block';
+        }
+
+        document.getElementById('game-title').textContent = gameName;
+        
+        function initializePeer() {
+            showView('lobby-view');
+
+            const peerConfig = {
+                debug: 2,
+                config: {
+                    'iceServers': [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                    ]
+                }
+            };
+            // KORREKTUR: PeerJS wird jetzt ohne ID initialisiert, sie wird automatisch generiert.
+            peer = new Peer(peerConfig);
+
+            peer.on('open', id => {
+                myPeerId = id;
+                if (isHost) setupHost();
+                else setupClient();
             });
-        } else {
-             tableHTML += `<tr><td colspan="${kategorien.length + 2}">Keine gültigen Ergebnisdaten erhalten.</td></tr>`;
+            peer.on('error', err => {
+                console.error("PeerJS Fehler:", err);
+                alert('PeerJS Verbindungsfehler: ' + err.type);
+            });
+        }
+
+        async function setupHost() {
+            document.getElementById('lobby-header').textContent = "Warten auf Spieler...";
+            startGameBtn.style.display = 'block';
+            startGameBtn.disabled = true;
+            addPlayerToList(myName + " (Host)");
+            
+            try {
+                const response = await fetch('/api/games', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gameName, hostId: myPeerId, hostName: myName, kategorien, spielzeit })
+                });
+                const createdGame = await response.json();
+                if (!response.ok) throw new Error(createdGame.error || "Serverfehler");
+                gameIdInDb = createdGame.id;
+            } catch (error) {
+                alert('Lobby konnte nicht erstellt werden: ' + error.message);
+            }
+
+            peer.on('connection', conn => {
+                conn.on('open', () => {
+                    const clientName = conn.metadata.name;
+                    connections[conn.peer] = conn;
+                    addPlayerToList(clientName);
+                    broadcast({ type: 'player-joined', name: clientName }, conn.peer);
+                    
+                    const allPlayerNames = Object.values(connections).map(c => c.metadata.name).concat([myName]);
+                    conn.send({ type: 'welcome', players: allPlayerNames, kategorien, spielzeit });
+                    
+                    conn.on('data', data => handleData(conn, data));
+                    startGameBtn.disabled = false;
+                });
+            });
+        }
+
+        function setupClient() {
+            document.getElementById('lobby-header').textContent = 'Beigetreten!';
+            document.getElementById('lobby-text').textContent = 'Warte, bis der Host das Spiel startet...';
+            
+            hostConnection = peer.connect(hostId, { metadata: { name: myName }, reliable: true });
+            hostConnection.on('data', data => handleData(null, data));
         }
         
-        tableHTML += `</tbody>`;
-        resultsTable.innerHTML = tableHTML;
-        nextRoundBtn.style.display = isHost ? 'block' : 'none';
-    }
+        function handleData(conn, data) {
+            switch(data.type) {
+                case 'welcome':
+                    kategorien = data.kategorien;
+                    spielzeit = data.spielzeit;
+                    updatePlayerList(data.players);
+                    break;
+                case 'player-joined':
+                    addPlayerToList(data.name);
+                    break;
+                case 'start-game':
+                    startGame(data.buchstabe);
+                    break;
+                case 'submit-answers':
+                    if(isHost) handleAnswerSubmission(conn.peer, data.answers);
+                    break;
+                case 'show-results':
+                    displayResults(data.results);
+                    break;
+            }
+        }
+        
+        function updatePlayerList(players) {
+            playerList.innerHTML = '';
+            players.forEach(name => addPlayerToList(name));
+        }
 
-    // Initialisierung
-    if (!myName) {
-        alert("Fehler: Spielername nicht gefunden. Bitte über die Lobby beitreten.");
-        window.location.href = '/lobby.html';
-    } else {
-        initializePeer();
-    }
-    
-    // Platzhalter für kopierten Code (die meisten Funktionen sind identisch zur Vorversion)
-    function showView(viewId){document.querySelectorAll('.view').forEach(v=>v.style.display='none');document.getElementById(viewId).style.display='block';}
-    function initializePeer(){showView('lobby-view');const pC={debug:2,config:{'iceServers':[{urls:'stun:stun.l.google.com:19302'}]}};peer=new Peer(pC);peer.on('open',id=>{myPeerId=id;if(isHost)setupHost();else setupClient();});peer.on('error',err=>alert('PeerJS Fehler: '+err.type));}
-    async function setupHost(){document.getElementById('lobby-header').textContent="Warten auf Spieler...";startGameBtn.style.display='block';startGameBtn.disabled=true;addPlayerToList(myName+" (Host)");try{const res=await fetch('/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gameName,hostId:myPeerId,hostName:myName,kategorien,spielzeit})});const game=await res.json();if(!res.ok)throw new Error(game.error);gameIdInDb=game.id;}catch(e){alert('Lobby konnte nicht erstellt werden: '+e.message);}peer.on('connection',c=>{c.on('open',()=>{const cN=c.metadata.name;connections[c.peer]=c;addPlayerToList(cN);broadcast({type:'player-joined',name:cN},c.peer);const allPN=Object.values(connections).map(c=>c.metadata.name).concat([myName]);c.send({type:'welcome',players:allPN,kategorien,spielzeit});c.on('data',d=>handleData(c,d));startGameBtn.disabled=false;});});}
-    function setupClient(){document.getElementById('lobby-header').textContent='Beigetreten!';document.getElementById('lobby-text').textContent='Warte, bis der Host das Spiel startet...';hostConnection=peer.connect(hostId,{metadata:{name:myName},reliable:true});hostConnection.on('data',d=>handleData(null,d));}
-    function handleData(c,d){switch(d.type){case'welcome':kategorien=d.kategorien;spielzeit=d.spielzeit;updatePlayerList(d.players);break;case'player-joined':addPlayerToList(d.name);break;case'start-game':startGame(d.buchstabe);break;case'submit-answers':if(isHost)handleAnswerSubmission(c.peer,d.answers);break;case'show-results':displayResults(d.results);break;}}
-    function updatePlayerList(p){playerList.innerHTML='';p.forEach(addPlayerToList);}
-    function addPlayerToList(n){const li=document.createElement('li');li.textContent=n;playerList.appendChild(li);}
-    function broadcast(d,e=null){Object.values(connections).forEach(c=>{if(c.peer!==e)c.send(d);});}
-    function endRound(){inputsContainer.querySelectorAll('input').forEach(i=>i.disabled=true);const a={};kategorien.forEach(k=>{a[k]=document.getElementById(`input-${k}`).value;});if(!isHost){hostConnection.send({type:'submit-answers',answers:a});}else{handleAnswerSubmission(myPeerId,a);}}
-    function handleAnswerSubmission(pId,a){const pN=pId===myPeerId?myName:connections[pId].metadata.name;collectedAnswers[pN]=kategorien.map(k=>a[k]||"");const pC=Object.keys(connections).length+1;if(Object.keys(collectedAnswers).length===pC)evaluateAllAnswers();}
-    async function evaluateAllAnswers(){showView('loading');try{const res=await fetch('/api/evaluate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({buchstabe,kategorien,spieler_antworten:collectedAnswers})});const data=await res.json();if(isHost){document.getElementById('debug-area').style.display='block';document.getElementById('debug-output').textContent=JSON.stringify(data,null,2);}if(!res.ok||data.error)throw new Error(data.error||'Fehler');broadcast({type:'show-results',results:data});displayResults(data);}catch(e){alert(e.message);showView('lobby-view');}}
-    startGameBtn.addEventListener('click',async()=>{if(gameIdInDb)await fetch(`/api/games/${gameIdInDb}`,{method:'DELETE'});buchstabe=String.fromCharCode(65+Math.floor(Math.random()*26));collectedAnswers={};broadcast({type:'start-game',buchstabe});startGame(buchstabe);});
-    nextRoundBtn.addEventListener('click',()=>{buchstabe=String.fromCharCode(65+Math.floor(Math.random()*26));collectedAnswers={};broadcast({type:'start-game',buchstabe});startGame(buchstabe);});
+        function addPlayerToList(name) {
+            const li = document.createElement('li');
+            li.textContent = name;
+            playerList.appendChild(li);
+        }
+        
+        function broadcast(data, excludePeerId = null) {
+            Object.values(connections).forEach(conn => {
+                if (conn.peer !== excludePeerId) conn.send(data);
+            });
+        }
+
+        function startGame(b) {
+            buchstabe = b;
+            showView('game-area');
+            buchstabeEl.textContent = buchstabe;
+            inputsContainer.innerHTML = '';
+            kategorien.forEach(k => {
+                const inputDiv = document.createElement('div');
+                const placeholder = k.toLowerCase() === 'block' ? 'Blockiere ein Wort...' : `${k} mit ${buchstabe}...`;
+                inputDiv.innerHTML = `<label for="input-${k}">${k}:</label><input id="input-${k}" placeholder="${placeholder}" />`;
+                inputsContainer.appendChild(inputDiv);
+            });
+            let timeLeft = spielzeit;
+            countdownEl.textContent = timeLeft;
+            const timer = setInterval(() => {
+                timeLeft--;
+                countdownEl.textContent = timeLeft;
+                if (timeLeft <= 0) { clearInterval(timer); endRound(); }
+            }, 1000);
+        }
+        
+        let collectedAnswers = {};
+        function endRound() {
+            inputsContainer.querySelectorAll('input').forEach(input => input.disabled = true);
+            const answers = {};
+            kategorien.forEach(k => {
+                answers[k] = document.getElementById(`input-${k}`).value;
+            });
+            if (!isHost) {
+                hostConnection.send({ type: 'submit-answers', answers: answers });
+            } else {
+                handleAnswerSubmission(myPeerId, answers);
+            }
+        }
+        
+        function handleAnswerSubmission(peerId, answers) {
+            const playerName = peerId === myPeerId ? myName : connections[peerId].metadata.name;
+            collectedAnswers[playerName] = kategorien.map(k => answers[k] || "");
+            const playerCount = Object.keys(connections).length + 1;
+            if (Object.keys(collectedAnswers).length === playerCount) {
+                evaluateAllAnswers();
+            }
+        }
+        
+        async function evaluateAllAnswers() {
+            showView('loading');
+            try {
+                const response = await fetch('/api/evaluate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ buchstabe, kategorien, spieler_antworten: collectedAnswers })
+                });
+                const data = await response.json();
+                if (isHost) {
+                    debugArea.style.display = 'block';
+                    debugOutput.textContent = JSON.stringify(data, null, 2);
+                }
+                if (!response.ok || data.error) throw new Error(data.error || 'Fehler bei der Auswertung');
+                broadcast({ type: 'show-results', results: data });
+                displayResults(data);
+            } catch (error) {
+                alert(error.message);
+                showView('lobby-view');
+            }
+        }
+        
+        function displayResults(data) {
+            showView('results-area');
+            const anzeigeKategorien = kategorien.filter(k => k.toLowerCase() !== 'block');
+            let tableHTML = `<thead><tr><th>Spieler</th>${anzeigeKategorien.map(k => `<th>${k}</th>`).join('')}<th>Blockwort</th><th>Punkte</th></tr></thead><tbody>`;
+            
+            if (data && data.tabelle && Array.isArray(data.tabelle)) {
+                data.tabelle.forEach(row => {
+                    const totalScore = (row.punkte || []).reduce((sum, p) => sum + p, 0);
+                    tableHTML += `
+                      <tr>
+                        <td><strong>${row.spieler}</strong></td>
+                        ${(row.antworten || []).map((ans, i) => `<td>${ans || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}
+                        <td><em>${row.blockWort || "-"}</em></td>
+                        <td><strong>${totalScore}</strong></td>
+                      </tr>`;
+                });
+            }
+            
+            tableHTML += `</tbody>`;
+            resultsTable.innerHTML = tableHTML;
+            nextRoundBtn.style.display = isHost ? 'block' : 'none';
+        }
+
+        startGameBtn.addEventListener('click', async () => {
+            if (gameIdInDb) {
+                await fetch(`/api/games/${gameIdInDb}`, { method: 'DELETE' });
+            }
+            buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+            collectedAnswers = {};
+            broadcast({ type: 'start-game', buchstabe });
+            startGame(buchstabe);
+        });
+        
+        nextRoundBtn.addEventListener('click', () => {
+          buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+          collectedAnswers = {}; 
+          broadcast({ type: 'start-game', buchstabe });
+          startGame(buchstabe);
+        });
+
+        if (!myName) {
+            alert("Fehler: Spielername nicht gefunden. Bitte über die Lobby beitreten.");
+            window.location.href = '/lobby.html';
+        } else {
+            initializePeer();
+        }
+    });
   </script>
 </body>
 </html>
