@@ -27,19 +27,10 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>Spiele-Lobby</h1>
-            <div>
-                <button id="new-game-btn" class="primary">Neues Spiel erstellen</button>
-                <button id="flush-games-btn" class="danger">Lobby aufräumen</button>
-            </div>
-        </div>
+        <div class="header"><h1>Spiele-Lobby</h1><div><button id="new-game-btn" class="primary">Neues Spiel</button><button id="flush-games-btn" class="danger">Lobby aufräumen</button></div></div>
         <h2>Offene Spiele</h2>
-        <ul id="game-list">
-            <p id="loading-text">Verbinde mit Lobby...</p>
-        </ul>
+        <ul id="game-list"><p id="loading-text">Verbinde mit Lobby...</p></ul>
     </div>
-
     <div id="new-game-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>Neues Spiel konfigurieren</h2>
@@ -51,102 +42,68 @@
                 <label for="kategorien-input">Kategorien (durch Komma getrennt):</label>
                 <input type="text" id="kategorien-input" value="Stadt,Land,Fluss,Beruf,Tier" required>
                 <p style="font-size: 0.8em; color: #6c757d;">Das Feld "Block" wird automatisch hinzugefügt.</p>
-                <label for="spielzeit-input">Spielzeit (in Sekunden):</label>
+                <label for="spielzeit-input">Spielzeit (Sekunden):</label>
                 <input type="number" id="spielzeit-input" value="60" min="10" max="300" required>
-                <div style="margin-top: 20px;">
-                    <button type="submit" class="primary">Spiel erstellen & beitreten</button>
-                    <button type="button" id="cancel-btn">Abbrechen</button>
-                </div>
+                <div style="margin-top: 20px;"><button type="submit" class="primary">Erstellen & Beitreten</button><button type="button" id="cancel-btn">Abbrechen</button></div>
             </form>
         </div>
     </div>
-
-    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-auth-compat.js"></script>
-
     <script>
-        // Fügen Sie hier Ihre Firebase-Konfiguration ein
-        const firebaseConfig = {
-  apiKey: "AIzaSyAu0JTY2pLPIsfhmF92lyeXyzWvNIW0AqI",
-  authDomain: "stadtland-20411.firebaseapp.com",
-  projectId: "stadtland-20411",
-  storageBucket: "stadtland-20411.firebasestorage.app",
-  messagingSenderId: "545681689910",
-  appId: "1:545681689910:web:ecc5fe0efe0f0ca4523797",
-  measurementId: "G-MPCCFRTMYZ"
-};
-        
+        const firebaseConfig = { /* Fügen Sie hier Ihre Konfiguration ein */ };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
         const gamesCollection = db.collection('open_games');
-
         const gameList = document.getElementById('game-list');
         const newGameBtn = document.getElementById('new-game-btn');
         const flushGamesBtn = document.getElementById('flush-games-btn');
         const newGameModal = document.getElementById('new-game-modal');
         const newGameForm = document.getElementById('new-game-form');
         const cancelBtn = document.getElementById('cancel-btn');
-
         function setupLobbyListener() {
             gamesCollection.orderBy('createdAt', 'desc').onSnapshot(snapshot => {
                 gameList.innerHTML = '';
-                if (snapshot.empty) {
-                    gameList.innerHTML = '<p class="no-games">Aktuell sind keine Spiele offen.</p>';
-                } else {
-                    snapshot.forEach(doc => {
-                        const game = doc.data();
-                        const li = document.createElement('li');
-                        li.addEventListener('click', () => {
-                            const playerName = prompt("Wie lautet dein Name?", "Spieler");
-                            if (playerName) {
-                                window.location.href = `/index.html?hostId=${game.hostId}&gameName=${encodeURIComponent(game.gameName)}&playerName=${encodeURIComponent(playerName)}`;
-                            }
-                        });
-                        const kategorienText = (game.kategorien && Array.isArray(game.kategorien)) ? game.kategorien.filter(k => k.toLowerCase() !== 'block').join(', ') : 'Standard';
-                        li.innerHTML = `<div class="game-info"><span class="game-name">${game.gameName}</span><span class="host-name">Host: ${game.hostName} | Kategorien: ${kategorienText}</span></div><span>Beitreten &rarr;</span>`;
-                        gameList.appendChild(li);
+                if (snapshot.empty) { gameList.innerHTML = '<p>Keine Spiele offen.</p>'; return; }
+                snapshot.forEach(doc => {
+                    const game = doc.data();
+                    const li = document.createElement('li');
+                    li.addEventListener('click', () => {
+                        const playerName = prompt("Dein Name?", "Spieler");
+                        if (playerName) {
+                            window.location.href = `/index.html?hostId=${game.hostId}&gameName=${encodeURIComponent(game.gameName)}&playerName=${encodeURIComponent(playerName)}`;
+                        }
                     });
-                }
-            }, error => {
-                console.error("Lobby-Fehler:", error);
-                gameList.innerHTML = `<p class="no-games" style="color: red;">Verbindung zur Lobby fehlgeschlagen.</p>`;
-            });
+                    const kategorienText = (game.kategorien && Array.isArray(game.kategorien)) ? game.kategorien.filter(k => k.toLowerCase() !== 'block').join(', ') : 'Standard';
+                    li.innerHTML = `<div class="game-info"><span class="game-name">${game.gameName}</span><span class="host-name">Host: ${game.hostName} | Kategorien: ${kategorienText}</span></div><span>Beitreten &rarr;</span>`;
+                    gameList.appendChild(li);
+                });
+            }, error => { gameList.innerHTML = `<p style="color:red;">Verbindung zur Lobby fehlgeschlagen.</p>`; });
         }
-
-        auth.signInAnonymously().then(setupLobbyListener).catch(error => {
-            console.error('Anonymer Login fehlgeschlagen:', error);
-            gameList.innerHTML = `<p class="no-games" style="color: red;">Anmeldung fehlgeschlagen. Bitte Seite neu laden.</p>`;
-        });
-
+        auth.signInAnonymously().then(setupLobbyListener).catch(error => { gameList.innerHTML = `<p style="color:red;">Anmeldung fehlgeschlagen.</p>`; });
         newGameBtn.addEventListener('click', () => newGameModal.style.display = 'flex');
         cancelBtn.addEventListener('click', () => newGameModal.style.display = 'none');
         newGameModal.addEventListener('click', e => { if (e.target === newGameModal) newGameModal.style.display = 'none'; });
-
         newGameForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const gameName = document.getElementById('game-name-input').value;
             const playerName = document.getElementById('host-name-input').value;
             const kategorienString = document.getElementById('kategorien-input').value.trim() + ",Block";
             const spielzeit = document.getElementById('spielzeit-input').value;
-            
             if (gameName && playerName && kategorienString && spielzeit) {
                 const params = new URLSearchParams({ createGame: 'true', gameName, playerName, kategorien: kategorienString, spielzeit });
                 window.location.href = `/index.html?${params.toString()}`;
             }
         });
-
         flushGamesBtn.addEventListener('click', async () => {
             if (confirm("Sicher? Dies löscht ALLE offenen Spiele.")) {
                 try {
                     const response = await fetch('/api/games/flush', { method: 'DELETE' });
                     const result = await response.json();
-                    alert(result.message || 'Aktion ausgeführt.');
-                } catch (error) {
-                    alert('Fehler beim Aufräumen der Lobby.');
-                }
+                    alert(result.message);
+                } catch (error) { alert('Fehler beim Aufräumen.'); }
             }
         });
     </script>
