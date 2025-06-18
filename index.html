@@ -16,6 +16,8 @@
     label { display: block; font-weight: bold; margin-bottom: 5px; }
     input { width: calc(100% - 24px); margin-bottom: 15px; padding: 10px; border-radius: 4px; border: 1px solid #ced4da; font-size: 16px; }
     button { padding: 12px 20px; margin: 10px 5px 10px 0; border: none; border-radius: 4px; color: #fff; background-color: #007bff; cursor: pointer; font-size: 16px; }
+    button:hover { background-color: #0056b3; }
+    button:disabled { background-color: #6c757d; cursor: not-allowed; }
     .info-box { background-color: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
     #player-list li { list-style-type: '✅'; padding-left: 10px; }
   </style>
@@ -24,13 +26,6 @@
   <div class="container">
     <h1 id="game-title">Stadt-Land-Fluss</h1>
     
-    <!-- NEU: Ansicht 0 - Der Verbindungs-Button -->
-    <div id="connect-view" class="view" style="display: block;">
-        <h3 id="connect-header">Bereit für das Spiel?</h3>
-        <p id="connect-text">Dein Name: <strong id="player-name-display"></strong></p>
-        <button id="connect-btn">Verbinden</button>
-    </div>
-
     <div id="lobby-view" class="view">
       <h3 id="lobby-header">Verbinde...</h3>
       <p id="lobby-text"></p>
@@ -44,7 +39,9 @@
         <span>Buchstabe: <span id="buchstabe"></span></span>
         <span>Zeit: <span id="countdown"></span>s</span>
       </div>
-      <form id="playerForm"><div id="inputs"></div></form>
+      <form id="playerForm">
+        <div id="inputs"></div>
+      </form>
     </div>
     
     <div id="loading" class="view"><p><strong>Ergebnisse werden ausgewertet...</strong></p></div>
@@ -69,10 +66,13 @@
         let peer, myPeerId, isHost = isCreatingGame, connections = {}, hostConnection, buchstabe, gameIdInDb;
         
         const allViews = document.querySelectorAll('.view');
-        const connectBtn = document.getElementById('connect-btn');
         const playerList = document.getElementById('player-list');
         const startGameBtn = document.getElementById('start-game-btn');
-        // ... restliche UI-Elemente
+        const buchstabeEl = document.getElementById('buchstabe');
+        const countdownEl = document.getElementById('countdown');
+        const inputsContainer = document.getElementById('inputs');
+        const resultsTable = document.getElementById('results-table');
+        const nextRoundBtn = document.getElementById('next-round-btn');
         
         function showView(viewId) {
             allViews.forEach(view => view.style.display = 'none');
@@ -80,37 +80,124 @@
         }
 
         document.getElementById('game-title').textContent = gameName;
-        document.getElementById('player-name-display').textContent = myName;
-        if(isHost) {
-            document.getElementById('connect-header').textContent = `Lobby für "${gameName}" erstellen?`;
-            connectBtn.textContent = 'Lobby erstellen & beitreten';
+        
+        // --- SAUBER DEFINIERTE FUNKTIONEN ---
+
+        function addPlayerToList(name) {
+            const li = document.createElement('li');
+            li.textContent = name;
+            playerList.appendChild(li);
         }
 
-        // --- NEUE LOGIK: Initialisierung wird durch Klick ausgelöst ---
-        connectBtn.addEventListener('click', () => {
-            connectBtn.disabled = true;
-            connectBtn.textContent = 'Verbinde...';
-            initializePeer();
-        });
+        function updatePlayerList(players) {
+            playerList.innerHTML = '';
+            players.forEach(name => addPlayerToList(name));
+        }
 
-        function initializePeer() {
-            showView('lobby-view'); // Zeige den "Warte"-Bildschirm
-            
-            const peerConfig = {
-                debug: 2,
-                config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
-            };
-            peer = new Peer(peerConfig);
-
-            peer.on('open', id => {
-                myPeerId = id;
-                if (isHost) setupHost();
-                else setupClient();
+        function broadcast(data, excludePeerId = null) {
+            Object.values(connections).forEach(conn => {
+                if (conn.peer !== excludePeerId) conn.send(data);
             });
-            peer.on('error', err => alert('PeerJS Verbindungsfehler: ' + err.type));
+        }
+
+        function startGame(b) {
+            buchstabe = b;
+            showView('game-area');
+            buchstabeEl.textContent = buchstabe;
+            inputsContainer.innerHTML = '';
+            kategorien.forEach(k => {
+                const inputDiv = document.createElement('div');
+                const placeholder = k.toLowerCase() === 'block' ? 'Blockiere ein Wort...' : `${k} mit ${buchstabe}...`;
+                inputDiv.innerHTML = `<label for="input-${k}">${k}:</label><input id="input-${k}" placeholder="${placeholder}" />`;
+                inputsContainer.appendChild(inputDiv);
+            });
+            let timeLeft = spielzeit;
+            countdownEl.textContent = timeLeft;
+            const timer = setInterval(() => {
+                timeLeft--;
+                countdownEl.textContent = timeLeft;
+                if (timeLeft <= 0) { clearInterval(timer); endRound(); }
+            }, 1000);
+        }
+        
+        let collectedAnswers = {};
+        function endRound() {
+            inputsContainer.querySelectorAll('input').forEach(input => input.disabled = true);
+            const answers = {};
+            kategorien.forEach(k => { answers[k] = document.getElementById(`input-${k}`).value; });
+            if (!isHost) {
+                hostConnection.send({ type: 'submit-answers', answers: answers });
+            } else {
+                handleAnswerSubmission(myPeerId, answers);
+            }
+        }
+        
+        function handleAnswerSubmission(peerId, answers) {
+            const playerName = peerId === myPeerId ? myName : connections[peerId].metadata.name;
+            collectedAnswers[playerName] = kategorien.map(k => answers[k] || "");
+            const playerCount = Object.keys(connections).length + 1;
+            if (Object.keys(collectedAnswers).length === playerCount) {
+                evaluateAllAnswers();
+            }
+        }
+        
+        async function evaluateAllAnswers() {
+            showView('loading');
+            try {
+                const response = await fetch('/api/evaluate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ buchstabe, kategorien, spieler_antworten: collectedAnswers })
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) throw new Error(data.error || 'Fehler bei der Auswertung');
+                broadcast({ type: 'show-results', results: data });
+                displayResults(data);
+            } catch (error) {
+                alert(error.message);
+                showView('lobby-view');
+            }
+        }
+        
+        function displayResults(data) {
+            showView('results-area');
+            const anzeigeKategorien = kategorien.filter(k => k.toLowerCase() !== 'block');
+            let tableHTML = `<thead><tr><th>Spieler</th>${anzeigeKategorien.map(k => `<th>${k}</th>`).join('')}<th>Blockwort</th><th>Punkte</th></tr></thead><tbody>`;
+            if (data && data.tabelle && Array.isArray(data.tabelle)) {
+                data.tabelle.forEach(row => {
+                    const totalScore = (row.punkte || []).reduce((sum, p) => sum + p, 0);
+                    tableHTML += `<tr><td><strong>${row.spieler}</strong></td>${(row.antworten || []).map((ans, i) => `<td>${ans || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}<td><em>${row.blockWort || "-"}</em></td><td><strong>${totalScore}</strong></td></tr>`;
+                });
+            }
+            tableHTML += `</tbody>`;
+            resultsTable.innerHTML = tableHTML;
+            nextRoundBtn.style.display = isHost ? 'block' : 'none';
+        }
+
+        function handleData(conn, data) {
+            switch(data.type) {
+                case 'welcome':
+                    kategorien = data.kategorien;
+                    spielzeit = data.spielzeit;
+                    updatePlayerList(data.players);
+                    break;
+                case 'player-joined':
+                    addPlayerToList(data.name);
+                    break;
+                case 'start-game':
+                    startGame(data.buchstabe);
+                    break;
+                case 'submit-answers':
+                    if(isHost) handleAnswerSubmission(conn.peer, data.answers);
+                    break;
+                case 'show-results':
+                    displayResults(data.results);
+                    break;
+            }
         }
 
         async function setupHost() {
+            showView('lobby-view');
             document.getElementById('lobby-header').textContent = "Warten auf Spieler...";
             startGameBtn.style.display = 'block';
             startGameBtn.disabled = true;
@@ -123,7 +210,7 @@
                     body: JSON.stringify({ gameName, hostId: myPeerId, hostName: myName, kategorien, spielzeit })
                 });
                 const createdGame = await response.json();
-                if (!response.ok) throw new Error(createdGame.error);
+                if (!response.ok) throw new Error(createdGame.error || "Serverfehler");
                 gameIdInDb = createdGame.id;
             } catch (error) {
                 alert('Lobby konnte nicht erstellt werden: ' + error.message);
@@ -131,51 +218,66 @@
 
             peer.on('connection', conn => {
                 conn.on('open', () => {
+                    const clientName = conn.metadata.name;
                     connections[conn.peer] = conn;
+                    addPlayerToList(clientName);
+                    broadcast({ type: 'player-joined', name: clientName }, conn.peer);
+                    
+                    const allPlayerNames = Object.values(connections).map(c => c.metadata.name).concat([myName]);
+                    conn.send({ type: 'welcome', players: allPlayerNames, kategorien, spielzeit });
+                    
                     conn.on('data', data => handleData(conn, data));
+                    startGameBtn.disabled = false;
                 });
             });
         }
 
         function setupClient() {
-            document.getElementById('lobby-header').textContent = 'Verbindung zum Host wird hergestellt...';
+            showView('lobby-view');
+            document.getElementById('lobby-header').textContent = 'Beigetreten!';
+            document.getElementById('lobby-text').textContent = 'Warte, bis der Host das Spiel startet...';
+            
             hostConnection = peer.connect(hostId, { metadata: { name: myName }, reliable: true });
-
-            hostConnection.on('open', () => {
-                document.getElementById('lobby-text').textContent = 'Warte, bis der Host das Spiel startet...';
-                // Schicke eine Begrüßungsnachricht, sobald die Verbindung steht
-                hostConnection.send({ type: 'hello', name: myName });
-            });
-
             hostConnection.on('data', data => handleData(null, data));
         }
         
-        function handleData(conn, data) {
-            switch(data.type) {
-                case 'hello': // Nur Host empfängt dies
-                    if(isHost) {
-                        const clientName = data.name;
-                        addPlayerToList(clientName);
-                        broadcast({ type: 'player-joined', name: clientName }, conn.peer);
-                        const allPlayerNames = Object.values(connections).map(c => c.metadata.name).concat([myName]);
-                        conn.send({ type: 'welcome', players: allPlayerNames, kategorien, spielzeit });
-                        startGameBtn.disabled = false;
-                    }
-                    break;
-                case 'welcome': // Nur Client empfängt dies
-                    kategorien = data.kategorien;
-                    spielzeit = data.spielzeit;
-                    updatePlayerList(data.players);
-                    break;
-                // ... restliche cases wie zuvor ...
-            }
+        function initializePeer() {
+            const peerConfig = {
+                debug: 2,
+                config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
+            };
+            peer = new Peer(peerConfig);
+
+            peer.on('open', id => {
+                myPeerId = id;
+                if (isHost) setupHost();
+                else setupClient();
+            });
+            peer.on('error', err => alert('PeerJS Fehler: ' + err.type));
         }
+
+        // Event Listeners
+        startGameBtn.addEventListener('click', async () => {
+            if (gameIdInDb) await fetch(`/api/games/${gameIdInDb}`, { method: 'DELETE' });
+            buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+            collectedAnswers = {};
+            broadcast({ type: 'start-game', buchstabe });
+            startGame(buchstabe);
+        });
         
-        // Der Rest des Codes (updatePlayerList, startGame, etc.) bleibt funktional identisch.
-        
+        nextRoundBtn.addEventListener('click', () => {
+          buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+          collectedAnswers = {}; 
+          broadcast({ type: 'start-game', buchstabe });
+          startGame(buchstabe);
+        });
+
+        // Initialer Start des Skripts
         if (!myName) {
             alert("Fehler: Spielername nicht gefunden. Bitte über die Lobby beitreten.");
             window.location.href = '/lobby.html';
+        } else {
+            initializePeer();
         }
     });
   </script>
