@@ -20,8 +20,6 @@
     button:disabled { background-color: #6c757d; cursor: not-allowed; }
     .info-box { background-color: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
     #player-list li { list-style-type: '✅'; padding-left: 10px; }
-    #debug-area { margin-top: 30px; border-top: 2px solid #dc3545; padding-top: 15px; }
-    #debug-output { background-color: #212529; color: #f8f9fa; padding: 15px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; max-height: 300px; overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -52,15 +50,10 @@
       <h2>Ergebnisse</h2>
       <table id="results-table"></table>
       <button id="next-round-btn">Nächste Runde</button>
-      <div id="debug-area" style="display: none;">
-          <h3>Host-Debug: Rohe Daten vom Server</h3>
-          <pre id="debug-output"></pre>
-      </div>
     </div>
   </div>
 
   <script>
-    // WICHTIGE ÄNDERUNG: Der gesamte Code wird erst ausgeführt, wenn die Seite komplett geladen ist.
     document.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
         const hostId = urlParams.get('hostId');
@@ -80,8 +73,6 @@
         const inputsContainer = document.getElementById('inputs');
         const resultsTable = document.getElementById('results-table');
         const nextRoundBtn = document.getElementById('next-round-btn');
-        const debugArea = document.getElementById('debug-area');
-        const debugOutput = document.getElementById('debug-output');
         
         function showView(viewId) {
             allViews.forEach(view => view.style.display = 'none');
@@ -92,17 +83,10 @@
         
         function initializePeer() {
             showView('lobby-view');
-
             const peerConfig = {
                 debug: 2,
-                config: {
-                    'iceServers': [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' },
-                    ]
-                }
+                config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
             };
-            // KORREKTUR: PeerJS wird jetzt ohne ID initialisiert, sie wird automatisch generiert.
             peer = new Peer(peerConfig);
 
             peer.on('open', id => {
@@ -110,10 +94,7 @@
                 if (isHost) setupHost();
                 else setupClient();
             });
-            peer.on('error', err => {
-                console.error("PeerJS Fehler:", err);
-                alert('PeerJS Verbindungsfehler: ' + err.type);
-            });
+            peer.on('error', err => alert('PeerJS Fehler: ' + err.type));
         }
 
         async function setupHost() {
@@ -141,10 +122,8 @@
                     connections[conn.peer] = conn;
                     addPlayerToList(clientName);
                     broadcast({ type: 'player-joined', name: clientName }, conn.peer);
-                    
                     const allPlayerNames = Object.values(connections).map(c => c.metadata.name).concat([myName]);
                     conn.send({ type: 'welcome', players: allPlayerNames, kategorien, spielzeit });
-                    
                     conn.on('data', data => handleData(conn, data));
                     startGameBtn.disabled = false;
                 });
@@ -154,7 +133,6 @@
         function setupClient() {
             document.getElementById('lobby-header').textContent = 'Beigetreten!';
             document.getElementById('lobby-text').textContent = 'Warte, bis der Host das Spiel startet...';
-            
             hostConnection = peer.connect(hostId, { metadata: { name: myName }, reliable: true });
             hostConnection.on('data', data => handleData(null, data));
         }
@@ -166,37 +144,16 @@
                     spielzeit = data.spielzeit;
                     updatePlayerList(data.players);
                     break;
-                case 'player-joined':
-                    addPlayerToList(data.name);
-                    break;
-                case 'start-game':
-                    startGame(data.buchstabe);
-                    break;
-                case 'submit-answers':
-                    if(isHost) handleAnswerSubmission(conn.peer, data.answers);
-                    break;
-                case 'show-results':
-                    displayResults(data.results);
-                    break;
+                case 'player-joined': addPlayerToList(data.name); break;
+                case 'start-game': startGame(data.buchstabe); break;
+                case 'submit-answers': if(isHost) handleAnswerSubmission(conn.peer, data.answers); break;
+                case 'show-results': displayResults(data.results); break;
             }
         }
         
-        function updatePlayerList(players) {
-            playerList.innerHTML = '';
-            players.forEach(name => addPlayerToList(name));
-        }
-
-        function addPlayerToList(name) {
-            const li = document.createElement('li');
-            li.textContent = name;
-            playerList.appendChild(li);
-        }
-        
-        function broadcast(data, excludePeerId = null) {
-            Object.values(connections).forEach(conn => {
-                if (conn.peer !== excludePeerId) conn.send(data);
-            });
-        }
+        function updatePlayerList(players) { playerList.innerHTML = ''; players.forEach(name => addPlayerToList(name)); }
+        function addPlayerToList(name) { const li = document.createElement('li'); li.textContent = name; playerList.appendChild(li); }
+        function broadcast(data, excludePeerId = null) { Object.values(connections).forEach(conn => { if (conn.peer !== excludePeerId) conn.send(data); }); }
 
         function startGame(b) {
             buchstabe = b;
@@ -222,23 +179,16 @@
         function endRound() {
             inputsContainer.querySelectorAll('input').forEach(input => input.disabled = true);
             const answers = {};
-            kategorien.forEach(k => {
-                answers[k] = document.getElementById(`input-${k}`).value;
-            });
-            if (!isHost) {
-                hostConnection.send({ type: 'submit-answers', answers: answers });
-            } else {
-                handleAnswerSubmission(myPeerId, answers);
-            }
+            kategorien.forEach(k => { answers[k] = document.getElementById(`input-${k}`).value; });
+            if (!isHost) { hostConnection.send({ type: 'submit-answers', answers }); } 
+            else { handleAnswerSubmission(myPeerId, answers); }
         }
         
         function handleAnswerSubmission(peerId, answers) {
             const playerName = peerId === myPeerId ? myName : connections[peerId].metadata.name;
             collectedAnswers[playerName] = kategorien.map(k => answers[k] || "");
             const playerCount = Object.keys(connections).length + 1;
-            if (Object.keys(collectedAnswers).length === playerCount) {
-                evaluateAllAnswers();
-            }
+            if (Object.keys(collectedAnswers).length === playerCount) { evaluateAllAnswers(); }
         }
         
         async function evaluateAllAnswers() {
@@ -250,10 +200,6 @@
                     body: JSON.stringify({ buchstabe, kategorien, spieler_antworten: collectedAnswers })
                 });
                 const data = await response.json();
-                if (isHost) {
-                    debugArea.style.display = 'block';
-                    debugOutput.textContent = JSON.stringify(data, null, 2);
-                }
                 if (!response.ok || data.error) throw new Error(data.error || 'Fehler bei der Auswertung');
                 broadcast({ type: 'show-results', results: data });
                 displayResults(data);
@@ -267,29 +213,19 @@
             showView('results-area');
             const anzeigeKategorien = kategorien.filter(k => k.toLowerCase() !== 'block');
             let tableHTML = `<thead><tr><th>Spieler</th>${anzeigeKategorien.map(k => `<th>${k}</th>`).join('')}<th>Blockwort</th><th>Punkte</th></tr></thead><tbody>`;
-            
             if (data && data.tabelle && Array.isArray(data.tabelle)) {
                 data.tabelle.forEach(row => {
                     const totalScore = (row.punkte || []).reduce((sum, p) => sum + p, 0);
-                    tableHTML += `
-                      <tr>
-                        <td><strong>${row.spieler}</strong></td>
-                        ${(row.antworten || []).map((ans, i) => `<td>${ans || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}
-                        <td><em>${row.blockWort || "-"}</em></td>
-                        <td><strong>${totalScore}</strong></td>
-                      </tr>`;
+                    tableHTML += `<tr><td><strong>${row.spieler}</strong></td>${(row.antworten || []).map((ans, i) => `<td>${ans || "-"} (${(row.punkte || [])[i] || 0})</td>`).join('')}<td><em>${row.blockWort || "-"}</em></td><td><strong>${totalScore}</strong></td></tr>`;
                 });
             }
-            
             tableHTML += `</tbody>`;
             resultsTable.innerHTML = tableHTML;
             nextRoundBtn.style.display = isHost ? 'block' : 'none';
         }
 
         startGameBtn.addEventListener('click', async () => {
-            if (gameIdInDb) {
-                await fetch(`/api/games/${gameIdInDb}`, { method: 'DELETE' });
-            }
+            if (gameIdInDb) await fetch(`/api/games/${gameIdInDb}`, { method: 'DELETE' });
             buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
             collectedAnswers = {};
             broadcast({ type: 'start-game', buchstabe });
