@@ -9,8 +9,25 @@
         .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h1, h2 { color: #343a40; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
         #game-list { list-style-type: none; padding: 0; }
-        #game-list li { background-color: #e9ecef; margin-bottom: 10px; padding: 15px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background-color 0.2s; }
-        #game-list li:hover { background-color: #dde2e6; }
+        
+        /* WICHTIGE ÄNDERUNG: Wir stylen jetzt das <a>-Tag anstatt des <li>-Tags */
+        a.game-list-item {
+            display: flex; /* Verhält sich wie ein Block, aber flexibel */
+            justify-content: space-between;
+            align-items: center;
+            background-color: #e9ecef;
+            margin-bottom: 10px;
+            padding: 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            text-decoration: none; /* Entfernt den Link-Unterstrich */
+            color: inherit; /* Verwendet die normale Textfarbe */
+        }
+        a.game-list-item:hover {
+            background-color: #dde2e6;
+        }
+
         .game-info { flex-grow: 1; }
         .game-info span { display: block; }
         .game-info .game-name { font-weight: bold; color: #0056b3; }
@@ -21,20 +38,31 @@
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-content { background-color: #fff; padding: 30px; border-radius: 8px; width: 90%; max-width: 500px; }
-        .modal-content label { display: block; margin-top: 15px; font-weight: bold; }
-        .modal-content input { width: calc(100% - 20px); padding: 8px; margin-top: 5px; }
+        .no-games { color: #6c757d; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header"><h1>Spiele-Lobby</h1><div><button id="new-game-btn" class="primary">Neues Spiel</button><button id="flush-games-btn" class="danger">Lobby aufräumen</button></div></div>
+        <div class="header">
+            <h1>Spiele-Lobby</h1>
+            <div>
+                <button id="new-game-btn" class="primary">Neues Spiel erstellen</button>
+                <button id="flush-games-btn" class="danger">Lobby aufräumen</button>
+            </div>
+        </div>
+        
         <h2>Offene Spiele</h2>
-        <ul id="game-list"><p id="loading-text">Verbinde mit Lobby...</p></ul>
+        <!-- Die Liste bleibt eine <ul>, aber sie wird mit <a>-Tags gefüllt -->
+        <ul id="game-list">
+            <p id="loading-text">Verbinde mit Lobby...</p>
+        </ul>
     </div>
+
     <div id="new-game-modal" class="modal-overlay">
+        <!-- Der Inhalt des Modals bleibt identisch -->
         <div class="modal-content">
-            <h2>Neues Spiel konfigurieren</h2>
-            <form id="new-game-form">
+             <h2>Neues Spiel konfigurieren</h2>
+             <form id="new-game-form">
                 <label for="game-name-input">Spielname:</label>
                 <input type="text" id="game-name-input" value="Lustige Runde" required>
                 <label for="host-name-input">Dein Name (Host):</label>
@@ -45,13 +73,17 @@
                 <label for="spielzeit-input">Spielzeit (Sekunden):</label>
                 <input type="number" id="spielzeit-input" value="60" min="10" max="300" required>
                 <div style="margin-top: 20px;"><button type="submit" class="primary">Erstellen & Beitreten</button><button type="button" id="cancel-btn">Abbrechen</button></div>
-            </form>
+             </form>
         </div>
     </div>
+
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-auth-compat.js"></script>
+
     <script>
+        // Fügen Sie hier Ihre Firebase-Konfiguration ein
         const firebaseConfig = {
   apiKey: "AIzaSyAu0JTY2pLPIsfhmF92lyeXyzWvNIW0AqI",
   authDomain: "stadtland-20411.firebaseapp.com",
@@ -62,36 +94,68 @@
   measurementId: "G-MPCCFRTMYZ"
 };
         
+        
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
         const gamesCollection = db.collection('open_games');
+
         const gameList = document.getElementById('game-list');
         const newGameBtn = document.getElementById('new-game-btn');
         const flushGamesBtn = document.getElementById('flush-games-btn');
         const newGameModal = document.getElementById('new-game-modal');
         const newGameForm = document.getElementById('new-game-form');
         const cancelBtn = document.getElementById('cancel-btn');
+
         function setupLobbyListener() {
             gamesCollection.orderBy('createdAt', 'desc').onSnapshot(snapshot => {
                 gameList.innerHTML = '';
-                if (snapshot.empty) { gameList.innerHTML = '<p>Keine Spiele offen.</p>'; return; }
-                snapshot.forEach(doc => {
-                    const game = doc.data();
-                    const li = document.createElement('li');
-                    li.addEventListener('click', () => {
-                        const playerName = prompt("Dein Name?", "Spieler");
-                        if (playerName) {
-                            window.location.href = `/index.html?hostId=${game.hostId}&gameName=${encodeURIComponent(game.gameName)}&playerName=${encodeURIComponent(playerName)}`;
-                        }
+                if (snapshot.empty) {
+                    gameList.innerHTML = '<p class="no-games">Aktuell sind keine Spiele offen.</p>';
+                } else {
+                    snapshot.forEach(doc => {
+                        const game = doc.data();
+                        
+                        // WICHTIGE ÄNDERUNG: Wir erstellen ein <a>-Tag anstatt eines <li>-Tags
+                        const gameLink = document.createElement('a');
+                        gameLink.className = 'game-list-item'; // CSS-Klasse für das Styling
+                        gameLink.href = '#'; // Platzhalter, um es klickbar zu machen
+                        
+                        gameLink.addEventListener('click', (e) => {
+                            e.preventDefault(); // Verhindert, dass der Browser springt
+                            const playerName = prompt("Wie lautet dein Name?", "Spieler");
+                            if (playerName) {
+                                const params = new URLSearchParams({
+                                    hostId: game.hostId,
+                                    gameName: game.gameName,
+                                    playerName: playerName
+                                });
+                                window.location.href = `/index.html?${params.toString()}`;
+                            }
+                        });
+                        
+                        const kategorienText = (game.kategorien && Array.isArray(game.kategorien)) ? game.kategorien.filter(k => k.toLowerCase() !== 'block').join(', ') : 'Standard';
+                        
+                        gameLink.innerHTML = `
+                            <div class="game-info">
+                                <span class="game-name">${game.gameName || 'Unbenanntes Spiel'}</span>
+                                <span class="host-name">Host: ${game.hostName || '?'} | Kategorien: ${kategorienText}</span>
+                            </div>
+                            <span>Beitreten &rarr;</span>
+                        `;
+                        gameList.appendChild(gameLink);
                     });
-                    const kategorienText = (game.kategorien && Array.isArray(game.kategorien)) ? game.kategorien.filter(k => k.toLowerCase() !== 'block').join(', ') : 'Standard';
-                    li.innerHTML = `<div class="game-info"><span class="game-name">${game.gameName}</span><span class="host-name">Host: ${game.hostName} | Kategorien: ${kategorienText}</span></div><span>Beitreten &rarr;</span>`;
-                    gameList.appendChild(li);
-                });
-            }, error => { gameList.innerHTML = `<p style="color:red;">Verbindung zur Lobby fehlgeschlagen.</p>`; });
+                }
+            }, error => {
+                gameList.innerHTML = `<p style="color:red;">Verbindung zur Lobby fehlgeschlagen.</p>`;
+            });
         }
-        auth.signInAnonymously().then(setupLobbyListener).catch(error => { gameList.innerHTML = `<p style="color:red;">Anmeldung fehlgeschlagen.</p>`; });
+
+        auth.signInAnonymously().then(setupLobbyListener).catch(error => {
+            gameList.innerHTML = `<p style="color:red;">Anmeldung fehlgeschlagen.</p>`;
+        });
+
+        // Event Listeners für Modal und Buttons bleiben identisch
         newGameBtn.addEventListener('click', () => newGameModal.style.display = 'flex');
         cancelBtn.addEventListener('click', () => newGameModal.style.display = 'none');
         newGameModal.addEventListener('click', e => { if (e.target === newGameModal) newGameModal.style.display = 'none'; });
