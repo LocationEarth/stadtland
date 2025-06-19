@@ -186,15 +186,22 @@
 
         startGameBtn.addEventListener('click', async () => {
             if (gameIdInDb) await fetch(`/api/games/${gameIdInDb}`, { method: 'DELETE' });
-            buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+            // Dieser Code generiert einen zufälligen Buchstaben und schließt Q, X und Y aus.
+            // 1. Definiere alle erlaubten Buchstaben.
+            const erlaubteBuchstaben = "ABCDEFGHIJKLMNOPRSTUVWZ";
+            // 2. Wähle einen zufälligen Buchstaben aus diesem String aus.
+            buchstabe = erlaubteBuchstaben.charAt(Math.floor(Math.random() * erlaubteBuchstaben.length));
             collectedAnswers = {};
             broadcast({ type: 'start-game', buchstabe });
             startGame(buchstabe);
         });
         
         nextRoundBtn.addEventListener('click', () => {
-          buchstabe = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-          collectedAnswers = {}; 
+          // Dieser Code generiert einen zufälligen Buchstaben und schließt Q, X und Y aus.
+          // 1. Definiere alle erlaubten Buchstaben.
+          const erlaubteBuchstaben = "ABCDEFGHIJKLMNOPRSTUVWZ";
+          // 2. Wähle einen zufälligen Buchstaben aus diesem String aus.
+          buchstabe = erlaubteBuchstaben.charAt(Math.floor(Math.random() * erlaubteBuchstaben.length));          collectedAnswers = {}; 
           broadcast({ type: 'start-game', buchstabe });
           startGame(buchstabe);
         });
